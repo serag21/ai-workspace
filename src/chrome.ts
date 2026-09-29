@@ -1,4 +1,4 @@
-import {getProvider} from "./providers";
+import {getProvider,getSessionId} from "./providers";
 import type {AISession,Provider} from "./types";
 
 export async function discoverOpenSessions():Promise<AISession[]> {
@@ -10,13 +10,14 @@ export async function discoverOpenSessions():Promise<AISession[]> {
     .map(t=>({tab:t,provider:getProvider(t.url!)}))
     .filter((x):x is {tab:chrome.tabs.Tab;provider:Provider}=>Boolean(x.provider))
     .map(({tab,provider})=>({
-      id:`${provider}:${tab.id}`,
+      id:getSessionId(provider,tab.url!),
       provider,
       title:tab.title?.trim()||"Untitled conversation",
       url:tab.url!,
       tabId:tab.id!,
       windowId:tab.windowId,
       status:tab.discarded ? "idle" : tab.status==="loading" ? "working" : "idle",
+      lifecycle:tab.discarded ? "discarded" : "open",
       discarded:Boolean(tab.discarded),
       lastSeen:now,
       projectId:null,
@@ -25,6 +26,14 @@ export async function discoverOpenSessions():Promise<AISession[]> {
 }
 
 export async function focusSession(s:AISession){
+  if(s.tabId===null){
+    const tab=await chrome.tabs.create({url:s.url,active:true});
+    return tab.id??null;
+  }
+
   await chrome.tabs.update(s.tabId,{active:true});
-  await chrome.windows.update(s.windowId,{focused:true});
+  if(s.windowId!==null){
+    await chrome.windows.update(s.windowId,{focused:true});
+  }
+  return s.tabId;
 }
