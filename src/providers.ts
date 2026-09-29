@@ -1,1 +1,30 @@
-import type {Provider} from "./types"; export interface ProviderAdapter{provider:Provider;matches:(url:string)=>boolean;getLabel:()=>string;} const adapters:ProviderAdapter[]=[{provider:"chatgpt",matches:u=>/^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(u),getLabel:()=> "ChatGPT"},{provider:"claude",matches:u=>/^https:\/\/claude\.ai\//.test(u),getLabel:()=> "Claude"},{provider:"gemini",matches:u=>/^https:\/\/gemini\.google\.com\//.test(u),getLabel:()=> "Gemini"}]; export function getProvider(url:string):Provider|null{return adapters.find(a=>a.matches(url))?.provider??null;} export function getProviderLabel(p:Provider){return adapters.find(a=>a.provider===p)?.getLabel()??p;}
+import type {Provider} from "./types";
+
+export interface ProviderAdapter{
+  provider:Provider;
+  matches:(url:string)=>boolean;
+  getLabel:()=>string;
+}
+
+const adapters:ProviderAdapter[]=[
+  {provider:"chatgpt",matches:u=>/^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(u),getLabel:()=> "ChatGPT"},
+  {provider:"claude",matches:u=>/^https:\/\/claude\.ai\//.test(u),getLabel:()=> "Claude"},
+  {provider:"gemini",matches:u=>/^https:\/\/gemini\.google\.com\//.test(u),getLabel:()=> "Gemini"}
+];
+
+export function getProvider(url:string):Provider|null{
+  return adapters.find(a=>a.matches(url))?.provider??null;
+}
+
+export function getProviderLabel(p:Provider){
+  return adapters.find(a=>a.provider===p)?.getLabel()??p;
+}
+
+export function getSessionId(provider:Provider,url:string):string{
+  try{
+    const parsed=new URL(url);
+    return `${provider}:${parsed.host}${parsed.pathname.replace(/\/$/,"")||"/"}`;
+  }catch{
+    return `${provider}:${url}`;
+  }
+}
