@@ -1,0 +1,54 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #e9eaf0;
+  background: #0c0d10;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 360px; background: #0c0d10; }
+button, input { font: inherit; }
+button { color: inherit; }
+.app { min-height: 100vh; padding: 20px 16px 28px; background: radial-gradient(circle at 90% 0%, rgba(99,102,241,.13), transparent 34%), #0c0d10; }
+.topbar { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; }
+.eyebrow { color:#8f91a0; font-size:10px; font-weight:700; letter-spacing:.16em; }
+h1 { margin:5px 0 0; font-size:24px; letter-spacing:-.04em; }
+.icon-button, .refresh, .pin { border:1px solid #262832; background:#15161b; cursor:pointer; }
+.icon-button { width:34px; height:34px; display:grid; place-items:center; border-radius:10px; color:#aeb1bd; }
+.attention { border:1px solid #242631; background:linear-gradient(145deg,#15161c,#111217); border-radius:16px; padding:15px; margin-bottom:14px; }
+.attention-header { display:flex; justify-content:space-between; align-items:flex-start; }
+.section-kicker { font-size:12px; font-weight:700; }
+.attention-header p { margin:4px 0 0; color:#858895; font-size:12px; }
+.live-dot { width:7px; height:7px; border-radius:50%; background:#7dd3a7; box-shadow:0 0 0 4px rgba(125,211,167,.08); margin-top:3px; }
+.attention-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px; }
+.stat { background:#0f1014; border:1px solid #22242c; border-radius:11px; padding:9px; display:flex; gap:8px; align-items:center; }
+.stat-icon { color:#9b9eaa; }
+.stat strong { display:block; font-size:15px; }
+.stat span { display:block; color:#777a87; font-size:10px; margin-top:1px; }
+.search { display:flex; align-items:center; gap:8px; color:#777a87; border:1px solid #242631; background:#121318; border-radius:11px; padding:0 11px; margin-bottom:16px; }
+.search input { width:100%; border:0; outline:0; background:transparent; color:#eceef5; padding:10px 0; font-size:12px; }
+.layout { display:grid; grid-template-columns:112px minmax(0,1fr); gap:16px; }
+.side-heading { color:#6f727f; font-size:10px; text-transform:uppercase; letter-spacing:.12em; margin:3px 8px 8px; }
+.project-row { width:100%; display:flex; align-items:center; gap:7px; border:0; background:transparent; border-radius:9px; padding:8px; color:#8f92a0; font-size:11px; cursor:pointer; text-align:left; }
+.project-row.selected { color:#ededf3; background:#181920; }
+.project-row .count { margin-left:auto; color:#666976; font-size:10px; }
+.sessions-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+.sessions-header h2 { margin:0; font-size:15px; letter-spacing:-.02em; }
+.sessions-header span { color:#6f727f; font-size:10px; }
+.refresh { border-radius:8px; padding:6px 8px; color:#9fa2ae; font-size:10px; }
+.session-list { display:flex; flex-direction:column; gap:7px; }
+.session-card { display:flex; align-items:center; gap:9px; min-width:0; border:1px solid #23252e; background:#121318; border-radius:11px; padding:10px; cursor:pointer; transition:background .15s,border-color .15s; }
+.session-card:hover { background:#171820; border-color:#30333e; }
+.provider-dot { width:7px; height:7px; border-radius:50%; flex:none; background:#8b5cf6; }
+.provider-dot.claude { background:#e69a65; }
+.provider-dot.gemini { background:#5d8df6; }
+.session-main { min-width:0; flex:1; }
+.session-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; font-weight:600; }
+.session-meta { color:#707380; font-size:9px; margin-top:3px; }
+.pin { width:27px; height:27px; border-radius:8px; color:#626572; display:grid; place-items:center; flex:none; }
+.pin.active { color:#c4b5fd; background:#211d32; border-color:#3a3155; }
+.empty { text-align:center; padding:42px 15px; border:1px dashed #272934; border-radius:14px; }
+.empty-icon { width:38px; height:38px; display:grid; place-items:center; margin:0 auto 10px; border-radius:12px; background:#171820; color:#858894; }
+.empty h3 { margin:0 0 5px; font-size:13px; }
+.empty p { margin:0; color:#707380; font-size:10px; line-height:1.5; }
+@media (max-width: 500px) { .layout { grid-template-columns:1fr; } .sidebar { display:flex; gap:5px; align-items:center; } .side-heading { display:none; } .project-row { width:auto; } }
