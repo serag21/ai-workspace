@@ -17,7 +17,7 @@ const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }
 
 export function App() {
   const [sessions, setSessions] = useState<AISession[]>([]);
-  const [projects] = useState<Project[]>(seedProjects);
+  const [projects, setProjects] = useState<Project[]>(seedProjects);
   const [query, setQuery] = useState("");
   const [selectedProject, setSelectedProject] = useState("inbox");
   const [loading, setLoading] = useState(true);
@@ -26,9 +26,9 @@ export function App() {
     setLoading(true);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions"]);
+      const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "projects"]);
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
-      const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
+      const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;\n      const savedProjects = (saved.projects ?? seedProjects) as Project[];\n      setProjects(savedProjects.length ? savedProjects : seedProjects);
 
       setSessions(
         discovered.map((session) => ({
