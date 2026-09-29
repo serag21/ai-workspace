@@ -26,19 +26,32 @@ export function App() {
     setLoading(true);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "projects"]);
+      const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "projects", "sessionMetadata"]);
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
+      const sessionMetadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
       setProjects(savedProjects.length ? savedProjects : seedProjects);
 
-      setSessions(
-        discovered.map((session) => ({
+      const merged = discovered.map((session) => {
+        const cachedTitle = sessionMetadata[session.id];
+        const isGenericTitle = /^((claude\.ai)|(chatgpt(\.com)?)|(gemini(\.google\.com)?)|(untitled conversation))$/i.test(session.title);
+        const title = session.discarded && cachedTitle && isGenericTitle ? cachedTitle : session.title;
+
+        if (!session.discarded && !isGenericTitle) {
+          sessionMetadata[session.id] = session.title;
+        }
+
+        return {
           ...session,
+          title,
           projectId: assignments[session.id] ?? "inbox",
           pinned: Boolean(pinned[session.id]),
-        }))
-      );
+        };
+      });
+
+      await chrome.storage.local.set({ sessionMetadata });
+      setSessions(merged);
     } finally {
       setLoading(false);
     }
@@ -163,8 +176,8 @@ export function App() {
                 <article key={session.id} className="session-card" onClick={() => void focusSession(session)}>
                   <div className={`provider-dot ${session.provider}`} />
                   <div className="session-main">
-                    <div className="session-title">{session.title}</div>
-                    <div className="session-meta">{getProviderLabel(session.provider)} · {statusMeta[session.status].label}</div>
+                    <div className="session-title" title={session.discarded ? "This tab is unloaded from memory. Clicking it will load the tab." : session.title}>{session.title}</div>
+                    <div className={`session-meta ${session.discarded ? "not-loaded" : ""}`}>{getProviderLabel(session.provider)} · {session.discarded ? "Not loaded" : statusMeta[session.status].label}</div>
                   </div>
                   <div className="session-actions" onClick={(event) => event.stopPropagation()}>
                     <select className="move-select" aria-label="Move to project" value={session.projectId ?? "inbox"} onChange={(event) => void moveSession(session, event.target.value)}>
