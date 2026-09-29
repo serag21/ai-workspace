@@ -52,3 +52,9 @@ h1 { margin:5px 0 0; font-size:24px; letter-spacing:-.04em; }
 .empty h3 { margin:0 0 5px; font-size:13px; }
 .empty p { margin:0; color:#707380; font-size:10px; line-height:1.5; }
 @media (max-width: 500px) { .layout { grid-template-columns:1fr; } .sidebar { display:flex; gap:5px; align-items:center; } .side-heading { display:none; } .project-row { width:auto; } }
+
+.new-project { margin-bottom: 5px; color:#747784; }
+.new-project:hover { color:#c7c9d2; background:#15161b; }
+.session-actions { display:flex; align-items:center; gap:5px; flex:none; }
+.move-select { max-width:90px; border:1px solid #262832; background:#15161b; color:#777a87; border-radius:7px; padding:5px 4px; font-size:9px; outline:0; }
+.move-select:focus { border-color:#3a3155; color:#c9c4dd; }
