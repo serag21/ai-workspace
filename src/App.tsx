@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, CheckCircle2, CircleAlert, Inbox, LayoutGrid, Pin, Search, Settings2 } from "lucide-react";
+import { Activity, CheckCircle2, CircleAlert, FolderPlus, Inbox, LayoutGrid, Pin, Search } from "lucide-react";
 import { discoverOpenSessions, focusSession } from "./chrome";
 import { getProviderLabel } from "./providers";
 import type { AISession, Project, SessionStatus } from "./types";
@@ -67,6 +67,30 @@ export function App() {
     done: sessions.filter((s) => s.status === "done").length,
   };
 
+  async function createProject() {
+    const name = window.prompt("Project name");
+    if (!name?.trim()) return;
+
+    const project: Project = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      color: "#8b5cf6",
+    };
+
+    const nextProjects = [...projects, project];
+    setProjects(nextProjects);
+    setSelectedProject(project.id);
+    await chrome.storage.local.set({ projects: nextProjects });
+  }
+
+  async function moveSession(session: AISession, projectId: string) {
+    const saved = await chrome.storage.local.get("sessionAssignments");
+    const sessionAssignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
+    sessionAssignments[session.id] = projectId;
+    await chrome.storage.local.set({ sessionAssignments });
+    await refresh();
+  }
+
   async function togglePin(session: AISession) {
     const pinnedSessions = Object.fromEntries(sessions.map((s) => [s.id, s.pinned]));
     pinnedSessions[session.id] = !session.pinned;
@@ -81,7 +105,7 @@ export function App() {
           <div className="eyebrow">AI WORKSPACE</div>
           <h1>Your AI work</h1>
         </div>
-        <button className="icon-button" title="Settings"><Settings2 size={18} /></button>
+        <button className="icon-button" title="Create project" onClick={() => void createProject()}><FolderPlus size={18} /></button>
       </header>
 
       <section className="attention">
