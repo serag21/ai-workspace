@@ -15,6 +15,19 @@ const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }
   idle: { label: "Idle", icon: Activity },
 };
 
+const lifecycleRank = { open: 0, discarded: 1, closed: 2 } as const;
+
+function normalizeStoredSession(session: AISession): AISession {
+  const lifecycle = session.lifecycle ?? (session.tabId === null ? "closed" : session.discarded ? "discarded" : "open");
+  return {
+    ...session,
+    tabId: session.tabId ?? null,
+    windowId: session.windowId ?? null,
+    lifecycle,
+    discarded: lifecycle === "discarded",
+  };
+}
+
 export function App() {
   const [sessions, setSessions] = useState<AISession[]>([]);
   const [projects, setProjects] = useState<Project[]>(seedProjects);
@@ -26,31 +39,45 @@ export function App() {
     setLoading(true);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "projects", "sessionMetadata"]);
+      const saved = await chrome.storage.local.get(["sessions", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata"]);
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
-      const sessionMetadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
+      const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
+      const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
+      const storedById = new Map(storedSessions.map((session) => [session.id, session]));
+      const discoveredIds = new Set(discovered.map((session) => session.id));
+
       setProjects(savedProjects.length ? savedProjects : seedProjects);
 
-      const merged = discovered.map((session) => {
-        const cachedTitle = sessionMetadata[session.id];
-        const isGenericTitle = /^((claude\.ai)|(chatgpt(\.com)?)|(gemini(\.google\.com)?)|(untitled conversation))$/i.test(session.title);
-        const title = session.discarded && cachedTitle && isGenericTitle ? cachedTitle : session.title;
+      const liveSessions = discovered.map((session) => {
+        const legacyId = `${session.provider}:${session.tabId}`;
+        const previous = storedById.get(session.id) ?? storedById.get(legacyId);
+        const cachedTitle = previous?.title ?? metadata[session.id] ?? metadata[legacyId];
+        const isGenericTitle = /^(claude\.ai|chatgpt(\.com)?|gemini(\.google\.com)?|untitled conversation)$/i.test(session.title);
+        const title = session.discarded && isGenericTitle && cachedTitle ? cachedTitle : session.title;
+        const projectId = assignments[session.id] ?? assignments[legacyId] ?? previous?.projectId ?? "inbox";
+        const isPinned = pinned[session.id] ?? pinned[legacyId] ?? previous?.pinned ?? false;
 
         if (!session.discarded && !isGenericTitle) {
-          sessionMetadata[session.id] = session.title;
+          metadata[session.id] = session.title;
         }
 
-        return {
-          ...session,
-          title,
-          projectId: assignments[session.id] ?? "inbox",
-          pinned: Boolean(pinned[session.id]),
-        };
+        return { ...session, title, projectId, pinned: isPinned };
       });
 
-      await chrome.storage.local.set({ sessionMetadata });
+      const closedSessions = storedSessions
+        .filter((session) => !discoveredIds.has(session.id))
+        .map((session) => ({
+          ...session,
+          tabId: null,
+          windowId: null,
+          lifecycle: "closed" as const,
+          discarded: false,
+        }));
+
+      const merged = [...liveSessions, ...closedSessions];
+      await chrome.storage.local.set({ sessions: merged, sessionMetadata: metadata });
       setSessions(merged);
     } finally {
       setLoading(false);
@@ -73,13 +100,15 @@ export function App() {
     return sessions
       .filter((session) => session.projectId === selectedProject)
       .filter((session) => !normalized || session.title.toLowerCase().includes(normalized) || getProviderLabel(session.provider).toLowerCase().includes(normalized))
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastSeen - a.lastSeen);
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || lifecycleRank[a.lifecycle] - lifecycleRank[b.lifecycle] || b.lastSeen - a.lastSeen);
   }, [query, selectedProject, sessions]);
 
+  const liveSessions = sessions.filter((session) => session.lifecycle !== "closed");
+  const closedCount = sessions.length - liveSessions.length;
   const counts = {
-    working: sessions.filter((s) => s.status === "working").length,
-    needs: sessions.filter((s) => s.status === "needs-you").length,
-    done: sessions.filter((s) => s.status === "done").length,
+    working: liveSessions.filter((session) => session.status === "working").length,
+    needs: liveSessions.filter((session) => session.status === "needs-you").length,
+    done: liveSessions.filter((session) => session.status === "done").length,
   };
 
   async function createProject() {
@@ -99,17 +128,21 @@ export function App() {
   }
 
   async function moveSession(session: AISession, projectId: string) {
-    const saved = await chrome.storage.local.get("sessionAssignments");
-    const sessionAssignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
+    const sessionAssignments = Object.fromEntries(sessions.map((item) => [item.id, item.projectId ?? "inbox"]));
     sessionAssignments[session.id] = projectId;
     await chrome.storage.local.set({ sessionAssignments });
     await refresh();
   }
 
   async function togglePin(session: AISession) {
-    const pinnedSessions = Object.fromEntries(sessions.map((s) => [s.id, s.pinned]));
+    const pinnedSessions = Object.fromEntries(sessions.map((item) => [item.id, item.pinned]));
     pinnedSessions[session.id] = !session.pinned;
     await chrome.storage.local.set({ pinnedSessions });
+    await refresh();
+  }
+
+  async function openSession(session: AISession) {
+    await focusSession(session);
     await refresh();
   }
 
@@ -120,7 +153,9 @@ export function App() {
           <div className="eyebrow">AI WORKSPACE</div>
           <h1>Your AI work</h1>
         </div>
-        <button className="icon-button" title="Create project" onClick={() => void createProject()}><FolderPlus size={18} /></button>
+        <button className="icon-button" title="Create project" onClick={() => void createProject()}>
+          <FolderPlus size={18} />
+        </button>
       </header>
 
       <section className="attention">
@@ -150,7 +185,7 @@ export function App() {
             <button key={project.id} className={`project-row ${selectedProject === project.id ? "selected" : ""}`} onClick={() => setSelectedProject(project.id)}>
               {project.id === "inbox" ? <Inbox size={16} /> : <LayoutGrid size={16} />}
               <span>{project.name}</span>
-              <span className="count">{sessions.filter((s) => s.projectId === project.id).length}</span>
+              <span className="count">{sessions.filter((session) => session.projectId === project.id).length}</span>
             </button>
           ))}
         </aside>
@@ -158,8 +193,8 @@ export function App() {
         <main className="sessions">
           <div className="sessions-header">
             <div>
-              <h2>{projects.find((p) => p.id === selectedProject)?.name}</h2>
-              <span>{sessions.length} open AI conversations discovered</span>
+              <h2>{projects.find((project) => project.id === selectedProject)?.name}</h2>
+              <span>{liveSessions.length} live · {closedCount} closed · {sessions.length} total</span>
             </div>
             <button className="refresh" onClick={() => void refresh()}>{loading ? "Scanning…" : "Rescan"}</button>
           </div>
@@ -172,23 +207,31 @@ export function App() {
             </div>
           ) : (
             <div className="session-list">
-              {visible.map((session) => (
-                <article key={session.id} className="session-card" onClick={() => void focusSession(session)}>
-                  <div className={`provider-dot ${session.provider}`} />
-                  <div className="session-main">
-                    <div className="session-title" title={session.discarded ? "This tab is unloaded from memory. Clicking it will load the tab." : session.title}>{session.title}</div>
-                    <div className={`session-meta ${session.discarded ? "not-loaded" : ""}`}>{getProviderLabel(session.provider)} · {session.discarded ? "Not loaded" : statusMeta[session.status].label}</div>
-                  </div>
-                  <div className="session-actions" onClick={(event) => event.stopPropagation()}>
-                    <select className="move-select" aria-label="Move to project" value={session.projectId ?? "inbox"} onChange={(event) => void moveSession(session, event.target.value)}>
-                      {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                    </select>
-                    <button className={`pin ${session.pinned ? "active" : ""}`} onClick={() => void togglePin(session)} title="Pin">
-                      <Pin size={15} />
-                    </button>
-                  </div>
-                </article>
-              ))}
+              {visible.map((session) => {
+                const metaLabel = session.lifecycle === "closed" ? "Closed" : session.lifecycle === "discarded" ? "Not loaded" : statusMeta[session.status].label;
+                return (
+                  <article
+                    key={session.id}
+                    className={`session-card ${session.lifecycle === "closed" ? "closed-session" : ""}`}
+                    onClick={() => void openSession(session)}
+                    title={session.lifecycle === "closed" ? "Click to reopen this conversation" : session.lifecycle === "discarded" ? "This tab is unloaded from memory. Clicking it will load the tab." : session.title}
+                  >
+                    <div className={`provider-dot ${session.provider}`} />
+                    <div className="session-main">
+                      <div className="session-title">{session.title}</div>
+                      <div className={`session-meta ${session.lifecycle}`}>{getProviderLabel(session.provider)} · {metaLabel}</div>
+                    </div>
+                    <div className="session-actions" onClick={(event) => event.stopPropagation()}>
+                      <select className="move-select" aria-label="Move to project" value={session.projectId ?? "inbox"} onChange={(event) => void moveSession(session, event.target.value)}>
+                        {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                      </select>
+                      <button className={`pin ${session.pinned ? "active" : ""}`} onClick={() => void togglePin(session)} title="Pin">
+                        <Pin size={15} />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </main>
@@ -197,6 +240,6 @@ export function App() {
   );
 }
 
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+function Stat({ icon, label, value }: { icon: import("react").ReactNode; label: string; value: number }) {
   return <div className="stat"><div className="stat-icon">{icon}</div><div><strong>{value}</strong><span>{label}</span></div></div>;
 }
