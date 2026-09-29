@@ -28,7 +28,9 @@ export function App() {
       const discovered = await discoverOpenSessions();
       const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "projects"]);
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
-      const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;\n      const savedProjects = (saved.projects ?? seedProjects) as Project[];\n      setProjects(savedProjects.length ? savedProjects : seedProjects);
+      const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
+      const savedProjects = (saved.projects ?? seedProjects) as Project[];
+      setProjects(savedProjects.length ? savedProjects : seedProjects);
 
       setSessions(
         discovered.map((session) => ({
