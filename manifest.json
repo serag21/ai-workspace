@@ -2,8 +2,11 @@
   "manifest_version": 3,
   "name": "AI Workspace",
   "version": "0.1.0",
-  "description": "A calm control center for active AI work across ChatGPT, Claude, and Gemini.",
-  "permissions": ["tabs", "storage", "sidePanel"],
+  "permissions": [
+    "tabs",
+    "storage",
+    "sidePanel"
+  ],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",

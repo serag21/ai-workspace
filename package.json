@@ -2,7 +2,6 @@
   "name": "ai-workspace",
   "version": "0.1.0",
   "private": true,
-  "description": "A calm control center for active AI work across browser-based AI sessions.",
   "type": "module",
   "scripts": {
     "dev": "vite",
