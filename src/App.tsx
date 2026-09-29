@@ -140,9 +140,14 @@ export function App() {
                     <div className="session-title">{session.title}</div>
                     <div className="session-meta">{getProviderLabel(session.provider)} · {statusMeta[session.status].label}</div>
                   </div>
-                  <button className={`pin ${session.pinned ? "active" : ""}`} onClick={(event) => { event.stopPropagation(); void togglePin(session); }} title="Pin">
-                    <Pin size={15} />
-                  </button>
+                  <div className="session-actions" onClick={(event) => event.stopPropagation()}>
+                    <select className="move-select" aria-label="Move to project" value={session.projectId ?? "inbox"} onChange={(event) => void moveSession(session, event.target.value)}>
+                      {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                    </select>
+                    <button className={`pin ${session.pinned ? "active" : ""}`} onClick={() => void togglePin(session)} title="Pin">
+                      <Pin size={15} />
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
