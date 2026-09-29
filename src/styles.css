@@ -58,3 +58,8 @@ h1 { margin:5px 0 0; font-size:24px; letter-spacing:-.04em; }
 .session-actions { display:flex; align-items:center; gap:5px; flex:none; }
 .move-select { max-width:90px; border:1px solid #262832; background:#15161b; color:#777a87; border-radius:7px; padding:5px 4px; font-size:9px; outline:0; }
 .move-select:focus { border-color:#3a3155; color:#c9c4dd; }
+
+.session-card.closed-session { opacity:.72; }
+.session-card.closed-session:hover { opacity:1; }
+.session-meta.closed { color:#8a7b91; }
+.session-meta.discarded { color:#8b8f9b; }
