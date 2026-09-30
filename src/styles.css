@@ -59,6 +59,13 @@ h1 { margin:5px 0 0; font-size:24px; letter-spacing:-.04em; }
 .move-select { max-width:90px; border:1px solid #262832; background:#15161b; color:#777a87; border-radius:7px; padding:5px 4px; font-size:9px; outline:0; }
 .move-select:focus { border-color:#3a3155; color:#c9c4dd; }
 
+
+.view-filters { display:flex; gap:5px; margin:0 0 10px; overflow-x:auto; padding-bottom:1px; }
+.view-filters button { border:1px solid #242631; background:#121318; color:#777a87; border-radius:8px; padding:6px 8px; font-size:9px; cursor:pointer; white-space:nowrap; }
+.view-filters button:hover { color:#b7bac5; background:#171820; }
+.view-filters button.active { color:#e8e9ee; background:#1d1a2a; border-color:#3a3155; }
+.view-filters button span { margin-left:5px; color:#5e6270; }
+.view-filters button.active span { color:#aaa1cd; }
 .session-card.closed-session { opacity:.72; }
 .session-card.closed-session:hover { opacity:1; }
 .session-meta.closed { color:#8a7b91; }
