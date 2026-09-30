@@ -4,25 +4,41 @@ import type {AISession,Provider} from "./types";
 export async function discoverOpenSessions():Promise<AISession[]> {
   const tabs=await chrome.tabs.query({});
   const now=Date.now();
+  const sessions=new Map<string,AISession>();
 
-  return tabs
-    .filter(t=>Boolean(t.id&&t.url))
-    .map(t=>({tab:t,provider:getProvider(t.url!)}))
-    .filter((x):x is {tab:chrome.tabs.Tab;provider:Provider}=>Boolean(x.provider))
-    .map(({tab,provider})=>({
-      id:getSessionId(provider,tab.url!),
+  for(const tab of tabs){
+    if(!tab.id||!tab.url) continue;
+
+    const provider=getProvider(tab.url);
+    if(!provider) continue;
+
+    const id=getSessionId(provider,tab.url);
+    const session:AISession={
+      id,
       provider,
       title:tab.title?.trim()||"Untitled conversation",
-      url:tab.url!,
-      tabId:tab.id!,
+      url:tab.url,
+      tabId:tab.id,
       windowId:tab.windowId,
       status:tab.discarded ? "idle" : tab.status==="loading" ? "working" : "idle",
       lifecycle:tab.discarded ? "discarded" : "open",
       discarded:Boolean(tab.discarded),
       lastSeen:now,
       projectId:null,
-      pinned:false
-    }));
+      pinned:false,
+    };
+
+    const existing=sessions.get(id);
+    if(
+      !existing ||
+      (existing.discarded && !session.discarded) ||
+      (tab.active && !existing.tabId)
+    ){
+      sessions.set(id,session);
+    }
+  }
+
+  return [...sessions.values()];
 }
 
 export async function focusSession(s:AISession){
