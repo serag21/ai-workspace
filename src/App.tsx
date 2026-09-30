@@ -200,7 +200,7 @@ export function App() {
             <div className="session-list">
               {visible.map((session) => {
                 const metaLabel = session.lifecycle === "closed" ? "Closed" : session.lifecycle === "discarded" ? "Not loaded" : statusMeta[session.status].label;
-                return <article key={session.id} className={`session-card ${session.lifecycle === "closed" ? "closed-session" : ""}`} onClick={() => void openSession(session)} title={session.lifecycle === "closed" ? "Click to reopen this conversation" : session.lifecycle === "discarded" ? "This tab is unloaded from memory. Clicking it will load the tab." : session.title}>
+                return <article key={`${session.id}:${session.tabId ?? "closed"}`} className={`session-card ${session.lifecycle === "closed" ? "closed-session" : ""}`} onClick={() => void openSession(session)} title={session.lifecycle === "closed" ? "Click to reopen this conversation" : session.lifecycle === "discarded" ? "This tab is unloaded from memory. Clicking it will load the tab." : session.title}>
                   <div className={`provider-dot ${session.provider}`} />
                   <div className="session-main"><div className="session-title">{session.title}</div><div className={`session-meta ${session.lifecycle}`}>{getProviderLabel(session.provider)} · {metaLabel}</div></div>
                   <div className="session-actions" onClick={(event) => event.stopPropagation()}>
