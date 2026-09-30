@@ -12,7 +12,7 @@
 
   const sessionId = `${provider}:${location.host}${location.pathname.replace(/\/$/, "") || "/"}`;
   let lastStatus = "idle";
-  let generationObserved = false;
+  let responsePending = false;
 
   function visible(element) {
     const style = window.getComputedStyle(element);
@@ -45,15 +45,15 @@
 
   function readStatus() {
     if (hasBlockingPrompt()) return "needs-you";
-    if (hasWorkingControl() || document.querySelector('[aria-busy="true"]')) return "working";
-    if (generationObserved) return "done";
+    if (hasWorkingControl()) return "working";
+    if (responsePending) return "done";
     return "idle";
   }
 
   function emit(status) {
     if (status === lastStatus && status !== "done") return;
     lastStatus = status;
-    const payload = {
+    void chrome.runtime.sendMessage({
       type: "ai-workspace:session-state",
       sessionId,
       provider,
@@ -61,15 +61,17 @@
       title: document.title?.trim() || "Untitled conversation",
       url: location.href,
       observedAt: Date.now(),
-    };
-    void chrome.runtime.sendMessage(payload).catch(() => {});
+    }).catch(() => {});
   }
 
   function sample() {
-    const status = readStatus();
-    if (status === "working") generationObserved = true;
-    if (status === "done") generationObserved = false;
-    emit(status);
+    emit(readStatus());
+  }
+
+  function markRequestStarted() {
+    responsePending = true;
+    lastStatus = "idle";
+    emit("working");
   }
 
   document.addEventListener("click", (event) => {
@@ -78,10 +80,8 @@
     const button = target.closest("button,[role=button]");
     if (!button) return;
     const text = label(button);
-    if (/^(send|submit|send message|send prompt)$/i.test(text) || /send message|submit prompt/i.test(text)) {
-      generationObserved = true;
-      lastStatus = "idle";
-      emit("working");
+    if (/send message|send prompt|submit prompt/i.test(text) || /^(send|submit)$/i.test(text)) {
+      markRequestStarted();
     }
   }, true);
 
@@ -90,15 +90,10 @@
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (target.matches("textarea,[contenteditable=true]")) {
-      generationObserved = true;
-      lastStatus = "idle";
-      emit("working");
+      markRequestStarted();
     }
   }, true);
 
-  const observer = new MutationObserver(() => sample());
-  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-busy", "disabled", "aria-label", "title"] });
-
   sample();
-  window.setInterval(sample, 1000);
+  window.setInterval(sample, 1500);
 })();
