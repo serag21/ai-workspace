@@ -50,7 +50,8 @@ export function App() {
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
-      const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;\n      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; observedAt?: number }>;
+      const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
+      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; observedAt?: number }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
       const storedById = new Map(storedSessions.map((session) => [session.id, session]));
       const matchedStoredIds = new Set<string>();
@@ -65,8 +66,16 @@ export function App() {
         const title = session.discarded && isGenericTitle && cachedTitle ? cachedTitle : session.title;
         const projectId = assignments[session.id] ?? assignments[legacyId] ?? previous?.projectId ?? "inbox";
         const isPinned = pinned[session.id] ?? pinned[legacyId] ?? previous?.pinned ?? false;
+        const liveState = sessionStates[session.id] ?? sessionStates[legacyId];
         if (!session.discarded && !isGenericTitle) metadata[session.id] = session.title;
-        return { ...session, title, projectId, pinned: isPinned, lastSeen: previous?.lastSeen ?? session.lastSeen };
+        return {
+          ...session,
+          title: liveState?.title && !isGenericTitle ? liveState.title : title,
+          status: liveState?.status ?? previous?.status ?? session.status,
+          projectId,
+          pinned: isPinned,
+          lastSeen: previous?.lastSeen ?? session.lastSeen,
+        };
       });
 
       const closedSessions = storedSessions
@@ -85,6 +94,23 @@ export function App() {
     if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
     refreshTimer.current = window.setTimeout(() => { void refresh(); }, 250);
   }
+
+  useEffect(() => {
+    const onState = (message: { type?: string; sessionId?: string; status?: SessionStatus; title?: string }) => {
+      if (message.type !== "ai-workspace:session-state" || !message.sessionId || !message.status) return;
+
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === message.sessionId
+            ? { ...session, status: message.status!, title: message.title?.trim() || session.title }
+            : session,
+        ),
+      );
+    };
+
+    chrome.runtime.onMessage.addListener(onState);
+    return () => chrome.runtime.onMessage.removeListener(onState);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -115,9 +141,9 @@ export function App() {
 
   const projectSessions = sessions.filter((session) => session.projectId === selectedProject);
   const counts = {
-    working: projectSessions.filter((session) => session.status === "working" && session.lifecycle !== "closed").length,
-    needs: projectSessions.filter((session) => session.status === "needs-you" && session.lifecycle !== "closed").length,
-    done: projectSessions.filter((session) => session.status === "done" && session.lifecycle !== "closed").length,
+    working: projectSessions.filter((session) => session.status === "working" && session.lifecycle === "open").length,
+    needs: projectSessions.filter((session) => session.status === "needs-you" && session.lifecycle === "open").length,
+    done: projectSessions.filter((session) => session.status === "done" && session.lifecycle === "open").length,
   };
   const filterCounts = {
     all: projectSessions.length,
