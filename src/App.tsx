@@ -93,16 +93,13 @@ export function App() {
     };
     const onCreated = () => scheduleRefresh();
     const onRemoved = () => scheduleRefresh();
-    const onActivated = () => scheduleRefresh();
     chrome.tabs.onUpdated.addListener(onUpdated);
     chrome.tabs.onCreated.addListener(onCreated);
     chrome.tabs.onRemoved.addListener(onRemoved);
-    chrome.tabs.onActivated.addListener(onActivated);
     return () => {
       chrome.tabs.onUpdated.removeListener(onUpdated);
       chrome.tabs.onCreated.removeListener(onCreated);
       chrome.tabs.onRemoved.removeListener(onRemoved);
-      chrome.tabs.onActivated.removeListener(onActivated);
       if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
     };
   }, []);
