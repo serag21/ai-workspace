@@ -4,7 +4,7 @@ import type {AISession,Provider} from "./types";
 export async function discoverOpenSessions():Promise<AISession[]> {
   const tabs=await chrome.tabs.query({});
   const now=Date.now();
-  const sessions=new Map<string,AISession>();
+  const sessions=new Map<string,{session:AISession;active:boolean}>();
 
   for(const tab of tabs){
     if(!tab.id||!tab.url) continue;
@@ -31,14 +31,14 @@ export async function discoverOpenSessions():Promise<AISession[]> {
     const existing=sessions.get(id);
     if(
       !existing ||
-      (existing.discarded && !session.discarded) ||
-      (tab.active && !existing.tabId)
+      (existing.session.discarded && !session.discarded) ||
+      (Boolean(tab.active) && !existing.active)
     ){
-      sessions.set(id,session);
+      sessions.set(id,{session,active:Boolean(tab.active)});
     }
   }
 
-  return [...sessions.values()];
+  return [...sessions.values()].map(({session})=>session);
 }
 
 export async function focusSession(s:AISession){
