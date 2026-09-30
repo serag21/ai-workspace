@@ -44,13 +44,13 @@ export function App() {
     setLoading(true);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessions", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata"]);
+      const saved = await chrome.storage.local.get(["sessions", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "sessionStates"]);
       if (generation !== refreshGeneration.current) return;
 
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
-      const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
+      const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;\n      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; observedAt?: number }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
       const storedById = new Map(storedSessions.map((session) => [session.id, session]));
       const matchedStoredIds = new Set<string>();
