@@ -16,7 +16,7 @@ function providerFromUrl(url) {
 function sessionId(provider, url) {
   try {
     const parsed = new URL(url);
-    return provider + ":" + parsed.host + (parsed.pathname.replace(/\\/$/, "") || "/");
+    return provider + ":" + parsed.host + (parsed.pathname.replace(/\/$/, "") || "/");
   } catch {
     return provider + ":" + url;
   }
