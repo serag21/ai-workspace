@@ -99,6 +99,8 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     const id = message.sessionId || sessionId(provider, message.url);
     const previous = registry[id] || {};
 
+    const observedAt = message.timestamp || Date.now();
+
     registry[id] = {
       id,
       provider,
@@ -109,10 +111,38 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       status: message.status || previous.status || "idle",
       lifecycle: "open",
       discarded: false,
-      lastSeen: message.timestamp || Date.now(),
-      lastActivityAt: message.timestamp || previous.lastActivityAt || Date.now(),
+      lastSeen: observedAt,
+      lastActivityAt: observedAt,
+      latestUser: message.latestUser || previous.latestUser || "",
+      latestAssistant: message.latestAssistant || previous.latestAssistant || "",
+      snapshotAt: observedAt,
     };
 
     await writeRegistry(registry);
+
+    const stateResult = await chrome.storage.local.get("sessionStates");
+    const states = stateResult.sessionStates || {};
+    states[id] = {
+      status: registry[id].status,
+      title: registry[id].title,
+      latestUser: registry[id].latestUser,
+      latestAssistant: registry[id].latestAssistant,
+      observedAt,
+    };
+    await chrome.storage.local.set({ sessionStates: states });
+
+    try {
+      await chrome.runtime.sendMessage({
+        type: "ai-workspace:session-state",
+        sessionId: id,
+        status: registry[id].status,
+        title: registry[id].title,
+        latestUser: registry[id].latestUser,
+        latestAssistant: registry[id].latestAssistant,
+        observedAt,
+      });
+    } catch {
+      // Side panel may not currently be open.
+    }
   })();
 });
