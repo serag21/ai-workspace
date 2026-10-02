@@ -57,7 +57,11 @@ export function App() {
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
       const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
-      const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map(normalizeStoredSession);
+      const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map((session) => normalizeStoredSession({
+        ...session,
+        projectId: session.projectId ?? assignments[session.id] ?? "inbox",
+        pinned: session.pinned ?? Boolean(pinned[session.id]),
+      }));
       const storedById = new Map<string, AISession>();
       for (const session of [...storedSessions, ...registrySessions]) storedById.set(session.id, session);
       const matchedStoredIds = new Set<string>();
