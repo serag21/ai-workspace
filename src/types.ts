@@ -16,6 +16,9 @@ export interface AISession{
   projectId:string|null;
   pinned:boolean;
   lastActivityAt?:number;
+  latestUser?:string;
+  latestAssistant?:string;
+  snapshotAt?:number;
 }
 
 export interface Project{id:string;name:string;color:string;}
