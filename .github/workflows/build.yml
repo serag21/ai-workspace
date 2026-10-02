@@ -17,3 +17,5 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npm run build
+      - name: Verify extension bundle
+        run: test -f dist/manifest.json && test -f dist/background.js && test -f dist/content.js && test -f dist/index.html
