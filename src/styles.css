@@ -77,3 +77,25 @@ h1 { margin:5px 0 0; font-size:24px; letter-spacing:-.04em; }
 .session-meta.open { color:#777a87; }
 .session-meta.closed { color:#9a8a9f; }
 .session-meta.discarded { color:#8d92a0; }
+
+.session-card.selected-session { border-color:#3c3654; background:#171621; }
+.conversation-panel { margin-top:14px; border:1px solid #272a34; background:#111318; border-radius:14px; overflow:hidden; }
+.conversation-header { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; padding:14px; border-bottom:1px solid #22252d; }
+.conversation-header h3 { margin:6px 0 4px; font-size:13px; color:#e6e8ee; }
+.provider-badge { display:inline-flex; border-radius:6px; padding:3px 6px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; background:#1c1e25; color:#a7aab5; }
+.provider-badge.chatgpt { color:#78d6ae; background:#17302a; }
+.provider-badge.claude { color:#e4a875; background:#33271f; }
+.provider-badge.gemini { color:#91a9e7; background:#20293b; }
+.conversation-status { color:#717582; font-size:9px; }
+.latest-turn { padding:12px 14px; max-height:220px; overflow:auto; display:grid; gap:10px; }
+.latest-turn > div { border:1px solid #22252d; background:#15171c; border-radius:9px; padding:9px 10px; }
+.latest-turn span { color:#858995; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+.latest-turn p { color:#c8cbd3; font-size:10px; line-height:1.5; margin:5px 0 0; white-space:pre-wrap; }
+.composer { border-top:1px solid #22252d; padding:10px; }
+.composer textarea { width:100%; min-height:78px; resize:vertical; border:1px solid #292c35; border-radius:9px; background:#0f1014; color:#ebedf4; padding:10px; outline:none; font:inherit; font-size:11px; line-height:1.5; }
+.composer textarea:focus { border-color:#463b65; }
+.composer-footer { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:7px; }
+.composer-footer span { color:#666a76; font-size:9px; }
+.send-button { border:1px solid #473a68; background:#29213e; color:#d8cefb; border-radius:8px; padding:6px 10px; cursor:pointer; font-size:10px; }
+.send-button:hover:not(:disabled) { background:#332852; }
+.send-button:disabled { opacity:.45; cursor:default; }
