@@ -16,17 +16,17 @@
   let doneTimer = null;
 
   function sessionId() {
-    return provider + ":" + location.host + (location.pathname.replace(/\\/$/, "") || "/");
+    return provider + ":" + location.host + (location.pathname.replace(/\/$/, "") || "/");
   }
 
   function pageTitle() {
     const title = (document.title || "").trim();
     if (!title) return "";
-    return title.replace(/\\s*[|–-]\\s*(ChatGPT|Claude|Gemini).*$/i, "").trim();
+    return title.replace(/\s*[|–-]\s*(ChatGPT|Claude|Gemini).*$/i, "").trim();
   }
 
   function textOf(element) {
-    return (element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
+    return (element?.innerText || element?.textContent || "").replace(/\s+/g, " ").trim();
   }
 
   function firstMatches(selectors) {
