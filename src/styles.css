@@ -70,3 +70,10 @@ h1 { margin:5px 0 0; font-size:24px; letter-spacing:-.04em; }
 .session-card.closed-session:hover { opacity:1; }
 .session-meta.closed { color:#8a7b91; }
 .session-meta.discarded { color:#8b8f9b; }
+
+.session-close { width:27px; height:27px; border-radius:8px; border:1px solid #262832; background:#15161b; color:#656975; display:grid; place-items:center; cursor:pointer; }
+.session-close:hover { color:#e29b9b; border-color:#4a3033; background:#201719; }
+.session-meta.done { color:#85ca9e; }
+.session-meta.open { color:#777a87; }
+.session-meta.closed { color:#9a8a9f; }
+.session-meta.discarded { color:#8d92a0; }
