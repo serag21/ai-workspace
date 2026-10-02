@@ -36,6 +36,9 @@ export function App() {
   const [query, setQuery] = useState("");
   const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
   const [selectedProject, setSelectedProject] = useState("inbox");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [composer, setComposer] = useState("");
+  const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const refreshTimer = useRef<number | null>(null);
   const refreshGeneration = useRef(0);
@@ -196,6 +199,47 @@ export function App() {
     scheduleRefresh();
   }
 
+  async function sendPrompt(session: AISession) {
+    const text = composer.trim();
+    if (!text || sending) return;
+
+    setSending(true);
+    try {
+      let tabId = session.tabId;
+
+      if (tabId === null) {
+        tabId = await focusSession(session);
+        if (tabId === null) throw new Error("Could not reopen the conversation.");
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
+
+      let lastError = "";
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
+          const response = await chrome.tabs.sendMessage(tabId, {
+            type: "ai-workspace:send-prompt",
+            text,
+          });
+
+          if (response?.ok) {
+            setComposer("");
+            scheduleRefresh();
+            return;
+          }
+
+          lastError = response?.error || "The provider did not accept the prompt.";
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+        }
+      }
+
+      window.alert(lastError || "Could not send the prompt.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -236,7 +280,7 @@ export function App() {
             <div className="session-list">
               {visible.map((session) => {
                 const metaLabel = session.lifecycle === "closed" ? "Closed" : session.lifecycle === "discarded" ? "Not loaded" : statusMeta[session.status].label;
-                return <article key={`${session.id}:${session.tabId ?? "closed"}`} className={`session-card ${session.lifecycle === "closed" ? "closed-session" : ""}`} onClick={() => void openSession(session)} title={session.lifecycle === "closed" ? "Click to reopen this conversation" : session.lifecycle === "discarded" ? "This tab is unloaded from memory. Clicking it will load the tab." : session.title}>
+                return <article key={`${session.id}:${session.tabId ?? "closed"}`} className={`session-card ${session.id === selectedSessionId ? "selected-session" : ""} ${session.lifecycle === "closed" ? "closed-session" : ""}`} onClick={() => { setSelectedSessionId(session.id); void openSession(session); }} title={session.lifecycle === "closed" ? "Click to reopen this conversation" : session.lifecycle === "discarded" ? "This tab is unloaded from memory. Clicking it will load the tab." : session.title}>
                   <div className={`provider-dot ${session.provider}`} />
                   <div className="session-main"><div className="session-title">{session.title}</div><div className={`session-meta ${session.lifecycle}`}>{getProviderLabel(session.provider)} · {metaLabel}</div></div>
                   <div className="session-actions" onClick={(event) => event.stopPropagation()}>
@@ -248,6 +292,48 @@ export function App() {
               })}
             </div>
           )}
+          {selectedSessionId && sessions.some((session) => session.id === selectedSessionId) && (() => {
+            const selected = sessions.find((session) => session.id === selectedSessionId)!;
+            return (
+              <section className="conversation-panel">
+                <div className="conversation-header">
+                  <div>
+                    <span className={`provider-badge ${selected.provider}`}>{getProviderLabel(selected.provider)}</span>
+                    <h3>{selected.title}</h3>
+                    <span className="conversation-status">{statusMeta[selected.status].label} · {selected.lifecycle}</span>
+                  </div>
+                  <button className="refresh" onClick={() => void openSession(selected)}>Focus tab</button>
+                </div>
+
+                {(selected.latestUser || selected.latestAssistant) && (
+                  <div className="latest-turn">
+                    {selected.latestUser && <div><span>You</span><p>{selected.latestUser}</p></div>}
+                    {selected.latestAssistant && <div><span>{getProviderLabel(selected.provider)}</span><p>{selected.latestAssistant}</p></div>}
+                  </div>
+                )}
+
+                <div className="composer">
+                  <textarea
+                    value={composer}
+                    onChange={(event) => setComposer(event.target.value)}
+                    placeholder={`Continue this ${getProviderLabel(selected.provider)} conversation…`}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                        event.preventDefault();
+                        void sendPrompt(selected);
+                      }
+                    }}
+                  />
+                  <div className="composer-footer">
+                    <span>Ctrl/Cmd + Enter to send</span>
+                    <button className="send-button" disabled={!composer.trim() || sending} onClick={() => void sendPrompt(selected)}>
+                      {sending ? "Sending…" : "Send"}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
         </main>
       </div>
     </div>
