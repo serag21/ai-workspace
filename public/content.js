@@ -25,6 +25,44 @@
     return title.replace(/\\s*[|–-]\\s*(ChatGPT|Claude|Gemini).*$/i, "").trim();
   }
 
+  function textOf(element) {
+    return (element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
+  }
+
+  function firstMatches(selectors) {
+    for (const selector of selectors) {
+      const nodes = Array.from(document.querySelectorAll(selector));
+      if (nodes.length) return nodes;
+    }
+    return [];
+  }
+
+  function extractSnapshot() {
+    const configs = {
+      chatgpt: {
+        user: ['[data-message-author-role="user"]', '[data-role="user"]', '[data-message-author="user"]'],
+        assistant: ['[data-message-author-role="assistant"]', '[data-role="assistant"]', '[data-message-author="assistant"]', '.agent-turn'],
+      },
+      claude: {
+        user: ['[data-testid="human-message"]', '.font-user-message', '[data-testid="message-human"]', '.user-message'],
+        assistant: ['.font-claude-response', '[data-testid="ai-message"]', '[data-testid="message-assistant"]', '.assistant-message'],
+      },
+      gemini: {
+        user: ['.user-query', '[data-test-id="user-query"]', '.gemini-user-message'],
+        assistant: ['.model-response', '[data-test-id="model-response"]', '.gemini-response'],
+      },
+    };
+
+    const config = configs[provider];
+    const users = firstMatches(config.user).map(textOf).filter(Boolean);
+    const assistants = firstMatches(config.assistant).map(textOf).filter(Boolean);
+
+    return {
+      latestUser: users[users.length - 1] || "",
+      latestAssistant: assistants[assistants.length - 1] || "",
+    };
+  }
+
   function isStopControl(element) {
     const value = [
       element.getAttribute("aria-label") || "",
@@ -39,49 +77,12 @@
     return Array.from(document.querySelectorAll("button,[role='button'],[aria-label]")).some(isStopControl);
   }
 
-  function selectAll(selectorList) {
-    for (const selector of selectorList) {
-      const nodes = Array.from(document.querySelectorAll(selector));
-      if (nodes.length) return nodes;
-    }
-    return [];
-  }
-
-  function textOf(element) {
-    return (element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
-  }
-
-  function extractSnapshot() {
-    const configs = {
-      chatgpt: {
-        user: ['[data-message-author-role="user"]', '[data-role="user"]'],
-        assistant: ['[data-message-author-role="assistant"]', '[data-role="assistant"]', '.agent-turn'],
-      },
-      claude: {
-        user: ['[data-testid="human-message"]', '.font-user-message', '[data-testid="message-human"]'],
-        assistant: ['.font-claude-response', '[data-testid="ai-message"]', '[data-testid="message-assistant"]'],
-      },
-      gemini: {
-        user: ['.user-query', '[data-test-id="user-query"]', '.gemini-user-message'],
-        assistant: ['.model-response', '[data-test-id="model-response"]', '.gemini-response'],
-      },
-    };
-
-    const config = configs[provider];
-    const users = selectAll(config.user).map(textOf).filter(Boolean);
-    const assistants = selectAll(config.assistant).map(textOf).filter(Boolean);
-
-    return {
-      latestUser: users.at(-1) || "",
-      latestAssistant: assistants.at(-1) || "",
-    };
-  }
-
   function publish(status, title) {
     const snapshot = extractSnapshot();
     const latestUser = snapshot.latestUser.slice(0, 8000);
     const latestAssistant = snapshot.latestAssistant.slice(0, 8000);
     const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant;
+
     if (signature === lastSignature) return;
     lastSignature = signature;
 
@@ -127,22 +128,6 @@
     publish("idle", title);
   }
 
-  const observer = new MutationObserver(scan);
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-    attributes: true,
-    characterData: true,
-  });
-
-  scan();
-  setInterval(scan, 4000);
-
-  window.addEventListener("unload", () => {
-    observer.disconnect();
-    if (doneTimer) clearTimeout(doneTimer);
-  });
-})();
   function findInput() {
     const selectors = {
       chatgpt: ['#prompt-textarea', 'textarea[name="prompt-textarea"]', '[contenteditable="true"][aria-label*="ChatGPT"]'],
@@ -154,6 +139,7 @@
       const element = document.querySelector(selector);
       if (element && !element.closest('[aria-hidden="true"]')) return element;
     }
+
     return null;
   }
 
@@ -171,14 +157,21 @@
 
     element.textContent = "";
     document.execCommand("insertText", false, text);
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+    element.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertText",
+      data: text,
+    }));
   }
 
   function sendPrompt(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return { ok: false, error: "Prompt is empty." };
+
     const input = findInput();
     if (!input) return { ok: false, error: "Chat input was not found." };
 
-    setInputValue(input, text);
+    setInputValue(input, trimmed);
 
     const sendSelectors = {
       chatgpt: ['#composer-submit-button', 'button[data-testid*="send-button"]', 'button[aria-label*="Send"]'],
@@ -186,29 +179,50 @@
       gemini: ['button[aria-label*="Send"]', 'button[data-test-id*="send"]', 'button[type="submit"]'],
     };
 
-    let sendButton = null;
     for (const selector of sendSelectors[provider]) {
       const candidate = document.querySelector(selector);
       if (candidate && !candidate.hasAttribute("disabled")) {
-        sendButton = candidate;
-        break;
+        candidate.click();
+        return { ok: true };
       }
     }
 
-    if (sendButton) {
-      sendButton.click();
-      return { ok: true };
-    }
+    input.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter",
+      code: "Enter",
+      bubbles: true,
+    }));
 
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
     return { ok: true };
   }
 
+  const observer = new MutationObserver(scan);
+  observer.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+  });
+
+  scan();
+  setInterval(scan, 4000);
+
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== "ai-workspace:send-prompt") return;
+
     try {
       sendResponse(sendPrompt(String(message.text || "")));
     } catch (error) {
-      sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
+      sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
+
+    return true;
   });
+
+  window.addEventListener("unload", () => {
+    observer.disconnect();
+    if (doneTimer) clearTimeout(doneTimer);
+  });
+})();
