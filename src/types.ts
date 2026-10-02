@@ -15,6 +15,7 @@ export interface AISession{
   lastSeen:number;
   projectId:string|null;
   pinned:boolean;
+  lastActivityAt?:number;
 }
 
 export interface Project{id:string;name:string;color:string;}
