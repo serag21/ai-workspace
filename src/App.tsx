@@ -25,7 +25,8 @@ function normalizeStoredSession(session: AISession): AISession {
 function sessionSignature(sessions: AISession[]) {
   return JSON.stringify(sessions.map((session) => [
     session.id, session.title, session.url, session.tabId, session.windowId, session.status,
-    session.lifecycle, session.projectId, session.pinned, session.lastSeen,
+    session.lifecycle, session.projectId, session.pinned, session.lastSeen, session.lastActivityAt,
+    session.latestUser, session.latestAssistant, session.snapshotAt,
   ]));
 }
 
@@ -44,14 +45,14 @@ export function App() {
     setLoading(true);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessions", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "sessionStates"]);
+      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "sessionStates"]);
       if (generation !== refreshGeneration.current) return;
 
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
-      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; observedAt?: number }>;
+      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
       const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map(normalizeStoredSession);
       const storedById = new Map<string, AISession>();
@@ -75,13 +76,16 @@ export function App() {
           ...session,
           title: liveState?.title && !isGenericTitle ? liveState.title : title,
           status: liveState?.status ?? previous?.status ?? session.status,
+          latestUser: liveState?.latestUser ?? previous?.latestUser,
+          latestAssistant: liveState?.latestAssistant ?? previous?.latestAssistant,
+          snapshotAt: liveState?.observedAt ?? previous?.snapshotAt,
           projectId,
           pinned: isPinned,
           lastSeen: previous?.lastSeen ?? session.lastSeen,
         };
       });
 
-      const closedSessions = storedSessions
+      const closedSessions = Array.from(storedById.values())
         .filter((session) => !matchedStoredIds.has(session.id))
         .map((session) => ({ ...session, tabId: null, windowId: null, lifecycle: "closed" as const, discarded: false }));
 
@@ -99,13 +103,13 @@ export function App() {
   }
 
   useEffect(() => {
-    const onState = (message: { type?: string; sessionId?: string; status?: SessionStatus; title?: string }) => {
+    const onState = (message: { type?: string; sessionId?: string; status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }) => {
       if (message.type !== "ai-workspace:session-state" || !message.sessionId || !message.status) return;
 
       setSessions((current) =>
         current.map((session) =>
           session.id === message.sessionId
-            ? { ...session, status: message.status!, title: message.title?.trim() || session.title }
+            ? { ...session, status: message.status!, title: message.title?.trim() || session.title, latestUser: message.latestUser || session.latestUser, latestAssistant: message.latestAssistant || session.latestAssistant, snapshotAt: message.observedAt || session.snapshotAt }
             : session,
         ),
       );
@@ -183,6 +187,12 @@ export function App() {
 
   async function openSession(session: AISession) {
     await focusSession(session);
+    scheduleRefresh();
+  }
+
+  async function closeSession(session: AISession) {
+    if (session.tabId === null) return;
+    await chrome.tabs.remove(session.tabId);
     scheduleRefresh();
   }
 
