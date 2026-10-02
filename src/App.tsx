@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, CheckCircle2, CircleAlert, FolderPlus, Inbox, LayoutGrid, Pin, Search } from "lucide-react";
+import { Activity, CheckCircle2, CircleAlert, FolderPlus, Inbox, LayoutGrid, Pin, Search, X } from "lucide-react";
 import { discoverOpenSessions, focusSession } from "./chrome";
 import { getProviderLabel } from "./providers";
 import type { AISession, Project, SessionStatus } from "./types";
@@ -53,7 +53,9 @@ export function App() {
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
       const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; observedAt?: number }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
-      const storedById = new Map(storedSessions.map((session) => [session.id, session]));
+      const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map(normalizeStoredSession);
+      const storedById = new Map<string, AISession>();
+      for (const session of [...storedSessions, ...registrySessions]) storedById.set(session.id, session);
       const matchedStoredIds = new Set<string>();
       setProjects(savedProjects.length ? savedProjects : seedProjects);
 
@@ -61,7 +63,8 @@ export function App() {
         const legacyId = `${session.provider}:${session.tabId}`;
         const previous = storedById.get(session.id) ?? storedById.get(legacyId);
         if (previous) matchedStoredIds.add(previous.id);
-        const cachedTitle = previous?.title ?? metadata[session.id] ?? metadata[legacyId];
+        const providerState = (saved.sessionRegistry ?? {})[session.id] as Partial<AISession> | undefined;
+        const cachedTitle = providerState?.title ?? previous?.title ?? metadata[session.id] ?? metadata[legacyId];
         const isGenericTitle = /^(claude\.ai|chatgpt(\.com)?|gemini(\.google\.com)?|untitled conversation)$/i.test(session.title);
         const title = session.discarded && isGenericTitle && cachedTitle ? cachedTitle : session.title;
         const projectId = assignments[session.id] ?? assignments[legacyId] ?? previous?.projectId ?? "inbox";
@@ -229,6 +232,7 @@ export function App() {
                   <div className="session-actions" onClick={(event) => event.stopPropagation()}>
                     <select className="move-select" aria-label="Move to project" value={session.projectId ?? "inbox"} onChange={(event) => void moveSession(session, event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
                     <button className={`pin ${session.pinned ? "active" : ""}`} onClick={() => void togglePin(session)} title="Pin"><Pin size={15} /></button>
+                    {session.lifecycle !== "closed" && session.tabId !== null && <button className="session-close" onClick={() => void closeSession(session)} title="Close browser tab"><X size={14} /></button>}
                   </div>
                 </article>;
               })}
