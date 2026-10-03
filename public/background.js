@@ -5,6 +5,8 @@ const PROVIDER_HOSTS = {
   "gemini.google.com": "gemini",
 };
 
+const MAX_MESSAGES = 100;
+
 function providerFromUrl(url) {
   try {
     return PROVIDER_HOSTS[new URL(url).hostname] || null;
@@ -22,6 +24,23 @@ function sessionId(provider, url) {
   }
 }
 
+function normalizeMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+  const normalized = [];
+  for (const message of messages) {
+    if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
+    const text = String(message.text || "").trim();
+    if (!text) continue;
+    normalized.push({
+      id: String(message.id || (normalized.length + 1)),
+      role: message.role,
+      text: text.slice(0, 30000),
+      observedAt: Number(message.observedAt || Date.now()),
+    });
+  }
+  return normalized.slice(-MAX_MESSAGES);
+}
+
 async function readRegistry() {
   const result = await chrome.storage.local.get("sessionRegistry");
   return result.sessionRegistry || {};
@@ -31,8 +50,23 @@ async function writeRegistry(registry) {
   await chrome.storage.local.set({ sessionRegistry: registry });
 }
 
+async function injectBridge(tabId) {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+  } catch {}
+}
+
+async function syncOpenTabs() {
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id === undefined || !tab.url || !providerFromUrl(tab.url)) continue;
+    await injectBridge(tab.id);
+  }
+}
+
 async function upsertTab(tab, patch = {}) {
-  if (!tab?.id || !tab.url) return;
+  if (tab?.id === undefined || !tab.url) return;
+
   const provider = providerFromUrl(tab.url);
   if (!provider) return;
 
@@ -52,22 +86,31 @@ async function upsertTab(tab, patch = {}) {
     discarded: Boolean(tab.discarded),
     lastSeen: patch.timestamp || Date.now(),
     lastActivityAt: patch.timestamp || previous.lastActivityAt || Date.now(),
+    projectId: previous.projectId ?? null,
+    pinned: previous.pinned ?? false,
+    latestUser: patch.latestUser ?? previous.latestUser ?? "",
+    latestAssistant: patch.latestAssistant ?? previous.latestAssistant ?? "",
+    snapshotAt: patch.timestamp ?? previous.snapshotAt,
+    messages: patch.messages ? normalizeMessages(patch.messages) : previous.messages ?? [],
   };
 
   await writeRegistry(registry);
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-});
+async function configureAndSync() {
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  await syncOpenTabs();
+}
 
-chrome.tabs.onCreated.addListener((tab) => {
-  void upsertTab(tab);
-});
+chrome.runtime.onInstalled.addListener(() => { void configureAndSync(); });
+chrome.runtime.onStartup.addListener(() => { void syncOpenTabs(); });
+
+chrome.tabs.onCreated.addListener((tab) => { void upsertTab(tab); });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (!tab.url && !changeInfo.url) return;
   void upsertTab({ ...tab, url: changeInfo.url || tab.url }, {});
+  if (changeInfo.status === "complete" && tab.url && providerFromUrl(tab.url)) void injectBridge(tabId);
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
@@ -89,7 +132,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message?.type !== "ai-workspace:provider-state" || !sender.tab?.id) return;
+  if (message?.type !== "ai-workspace:provider-state" || sender.tab?.id === undefined) return;
 
   void (async () => {
     const provider = providerFromUrl(message.url);
@@ -98,8 +141,8 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     const registry = await readRegistry();
     const id = message.sessionId || sessionId(provider, message.url);
     const previous = registry[id] || {};
-
     const observedAt = message.timestamp || Date.now();
+    const messages = normalizeMessages(message.messages);
 
     registry[id] = {
       id,
@@ -113,9 +156,12 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       discarded: false,
       lastSeen: observedAt,
       lastActivityAt: observedAt,
+      projectId: previous.projectId ?? null,
+      pinned: previous.pinned ?? false,
       latestUser: message.latestUser || previous.latestUser || "",
       latestAssistant: message.latestAssistant || previous.latestAssistant || "",
       snapshotAt: observedAt,
+      messages: messages.length ? messages : previous.messages || [],
     };
 
     await writeRegistry(registry);
@@ -128,6 +174,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       latestUser: registry[id].latestUser,
       latestAssistant: registry[id].latestAssistant,
       observedAt,
+      messages: registry[id].messages,
     };
     await chrome.storage.local.set({ sessionStates: states });
 
@@ -140,9 +187,8 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         latestUser: registry[id].latestUser,
         latestAssistant: registry[id].latestAssistant,
         observedAt,
+        messages: registry[id].messages,
       });
-    } catch {
-      // Side panel may not currently be open.
-    }
+    } catch {}
   })();
 });

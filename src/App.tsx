@@ -1,32 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, CheckCircle2, CircleAlert, FolderPlus, Inbox, LayoutGrid, Pin, Search, X } from "lucide-react";
-import { discoverOpenSessions, focusSession } from "./chrome";
+import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlus, Inbox, LayoutGrid, Pin, Search, X } from "lucide-react";
+import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot } from "./chrome";
 import { getProviderLabel } from "./providers";
-import type { AISession, Project, SessionStatus } from "./types";
+import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
 
 const seedProjects: Project[] = [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }];
-
 const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }> = {
   working: { label: "Working", icon: Activity },
   "needs-you": { label: "Needs you", icon: CircleAlert },
   done: { label: "Done", icon: CheckCircle2 },
   idle: { label: "Idle", icon: Activity },
 };
-
 const lifecycleRank = { open: 0, discarded: 1, closed: 2 } as const;
 const statusRank: Record<SessionStatus, number> = { "needs-you": 0, working: 1, done: 2, idle: 3 };
 type ViewFilter = "all" | "open" | "discarded" | "closed";
 
 function normalizeStoredSession(session: AISession): AISession {
   const lifecycle = session.lifecycle ?? (session.tabId === null ? "closed" : session.discarded ? "discarded" : "open");
-  return { ...session, tabId: session.tabId ?? null, windowId: session.windowId ?? null, lifecycle, discarded: lifecycle === "discarded" };
+  return { ...session, tabId: session.tabId ?? null, windowId: session.windowId ?? null, lifecycle, discarded: lifecycle === "discarded", projectId: session.projectId ?? "inbox", messages: session.messages ?? [] };
 }
 
 function sessionSignature(sessions: AISession[]) {
   return JSON.stringify(sessions.map((session) => [
     session.id, session.title, session.url, session.tabId, session.windowId, session.status,
     session.lifecycle, session.projectId, session.pinned, session.lastSeen, session.lastActivityAt,
-    session.latestUser, session.latestAssistant, session.snapshotAt,
+    session.latestUser, session.latestAssistant, session.snapshotAt, session.messages?.length ?? 0,
   ]));
 }
 
@@ -55,7 +53,7 @@ export function App() {
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
-      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }>;
+      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number; messages?: SessionMessage[] }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
       const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map((session) => normalizeStoredSession({
         ...session,
@@ -64,21 +62,25 @@ export function App() {
       }));
       const storedById = new Map<string, AISession>();
       for (const session of [...storedSessions, ...registrySessions]) storedById.set(session.id, session);
+
       const matchedStoredIds = new Set<string>();
       setProjects(savedProjects.length ? savedProjects : seedProjects);
 
       const liveSessions = discovered.map((session) => {
-        const legacyId = `${session.provider}:${session.tabId}`;
+        const legacyId = session.provider + ":" + session.tabId;
         const previous = storedById.get(session.id) ?? storedById.get(legacyId);
         if (previous) matchedStoredIds.add(previous.id);
-        const providerState = (saved.sessionRegistry ?? {})[session.id] as Partial<AISession> | undefined;
+
+        const providerState = (saved.sessionRegistry ?? {})[session.id] as AISession | undefined;
         const cachedTitle = providerState?.title ?? previous?.title ?? metadata[session.id] ?? metadata[legacyId];
-        const isGenericTitle = /^(claude\.ai|chatgpt(\.com)?|gemini(\.google\.com)?|untitled conversation)$/i.test(session.title);
+        const isGenericTitle = /^(claude\\.ai|chatgpt(\\.com)?|gemini(\\.google\\.com)?|untitled conversation)$/i.test(session.title);
         const title = session.discarded && isGenericTitle && cachedTitle ? cachedTitle : session.title;
         const projectId = assignments[session.id] ?? assignments[legacyId] ?? previous?.projectId ?? "inbox";
         const isPinned = pinned[session.id] ?? pinned[legacyId] ?? previous?.pinned ?? false;
         const liveState = sessionStates[session.id] ?? sessionStates[legacyId];
+
         if (!session.discarded && !isGenericTitle) metadata[session.id] = session.title;
+
         return {
           ...session,
           title: liveState?.title && !isGenericTitle ? liveState.title : title,
@@ -86,6 +88,7 @@ export function App() {
           latestUser: liveState?.latestUser ?? previous?.latestUser,
           latestAssistant: liveState?.latestAssistant ?? previous?.latestAssistant,
           snapshotAt: liveState?.observedAt ?? previous?.snapshotAt,
+          messages: liveState?.messages ?? providerState?.messages ?? previous?.messages ?? [],
           projectId,
           pinned: isPinned,
           lastSeen: previous?.lastSeen ?? session.lastSeen,
@@ -99,8 +102,20 @@ export function App() {
       const merged = [...liveSessions, ...closedSessions];
       await chrome.storage.local.set({ sessions: merged, sessionMetadata: metadata });
       setSessions((current) => sessionSignature(current) === sessionSignature(merged) ? current : merged);
+      void captureOpenSnapshots(liveSessions);
     } finally {
       if (generation === refreshGeneration.current) setLoading(false);
+    }
+  }
+
+  async function captureOpenSnapshots(candidates: AISession[]) {
+    const open = candidates.filter((session) => session.lifecycle === "open" && session.tabId !== null);
+    for (let index = 0; index < open.length; index += 8) {
+      const batch = open.slice(index, index + 8);
+      await Promise.all(batch.map(async (session) => {
+        if (session.tabId === null) return;
+        await requestSessionSnapshot(session.tabId);
+      }));
     }
   }
 
@@ -110,16 +125,17 @@ export function App() {
   }
 
   useEffect(() => {
-    const onState = (message: { type?: string; sessionId?: string; status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }) => {
+    const onState = (message: { type?: string; sessionId?: string; status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number; messages?: SessionMessage[] }) => {
       if (message.type !== "ai-workspace:session-state" || !message.sessionId || !message.status) return;
-
-      setSessions((current) =>
-        current.map((session) =>
-          session.id === message.sessionId
-            ? { ...session, status: message.status!, title: message.title?.trim() || session.title, latestUser: message.latestUser || session.latestUser, latestAssistant: message.latestAssistant || session.latestAssistant, snapshotAt: message.observedAt || session.snapshotAt }
-            : session,
-        ),
-      );
+      setSessions((current) => current.map((session) => session.id === message.sessionId ? {
+        ...session,
+        status: message.status!,
+        title: message.title?.trim() || session.title,
+        latestUser: message.latestUser || session.latestUser,
+        latestAssistant: message.latestAssistant || session.latestAssistant,
+        snapshotAt: message.observedAt || session.snapshotAt,
+        messages: message.messages ?? session.messages,
+      } : session));
     };
 
     chrome.runtime.onMessage.addListener(onState);
@@ -144,16 +160,16 @@ export function App() {
     };
   }, []);
 
+  const projectSessions = sessions.filter((session) => session.projectId === selectedProject);
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const visible = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    return sessions
-      .filter((session) => session.projectId === selectedProject)
+    return projectSessions
       .filter((session) => viewFilter === "all" || session.lifecycle === viewFilter)
       .filter((session) => !normalized || session.title.toLocaleLowerCase().includes(normalized) || getProviderLabel(session.provider).toLocaleLowerCase().includes(normalized))
       .sort((a, b) => Number(b.pinned) - Number(a.pinned) || statusRank[a.status] - statusRank[b.status] || lifecycleRank[a.lifecycle] - lifecycleRank[b.lifecycle] || a.title.localeCompare(b.title));
-  }, [query, selectedProject, sessions, viewFilter]);
+  }, [projectSessions, query, viewFilter]);
 
-  const projectSessions = sessions.filter((session) => session.projectId === selectedProject);
   const counts = {
     working: projectSessions.filter((session) => session.status === "working" && session.lifecycle === "open").length,
     needs: projectSessions.filter((session) => session.status === "needs-you" && session.lifecycle === "open").length,
@@ -173,6 +189,7 @@ export function App() {
     const nextProjects = [...projects, project];
     setProjects(nextProjects);
     setSelectedProject(project.id);
+    setSelectedSessionId(null);
     await chrome.storage.local.set({ projects: nextProjects });
   }
 
@@ -181,7 +198,7 @@ export function App() {
     const sessionAssignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
     sessionAssignments[session.id] = projectId;
     await chrome.storage.local.set({ sessionAssignments });
-    scheduleRefresh();
+    setSessions((current) => current.map((item) => item.id === session.id ? { ...item, projectId } : item));
   }
 
   async function togglePin(session: AISession) {
@@ -189,10 +206,10 @@ export function App() {
     const pinnedSessions = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
     pinnedSessions[session.id] = !session.pinned;
     await chrome.storage.local.set({ pinnedSessions });
-    scheduleRefresh();
+    setSessions((current) => current.map((item) => item.id === session.id ? { ...item, pinned: !item.pinned } : item));
   }
 
-  async function openSession(session: AISession) {
+  async function openInChrome(session: AISession) {
     await focusSession(session);
     scheduleRefresh();
   }
@@ -209,35 +226,24 @@ export function App() {
 
     setSending(true);
     try {
-      let tabId = session.tabId;
-
-      if (tabId === null) {
-        tabId = await focusSession(session);
-        if (tabId === null) throw new Error("Could not reopen the conversation.");
-        await new Promise((resolve) => window.setTimeout(resolve, 1200));
-      }
+      const tabId = session.tabId ?? await ensureSessionTab(session);
+      if (tabId === null) throw new Error("Could not reopen the conversation.");
 
       let lastError = "";
-      for (let attempt = 0; attempt < 4; attempt += 1) {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
         try {
-          const response = await chrome.tabs.sendMessage(tabId, {
-            type: "ai-workspace:send-prompt",
-            text,
-          });
-
+          const response = await chrome.tabs.sendMessage(tabId, { type: "ai-workspace:send-prompt", text });
           if (response?.ok) {
             setComposer("");
-            scheduleRefresh();
+            setSessions((current) => current.map((item) => item.id === session.id ? { ...item, status: "working", lifecycle: "open", tabId } : item));
             return;
           }
-
           lastError = response?.error || "The provider did not accept the prompt.";
         } catch (error) {
           lastError = error instanceof Error ? error.message : String(error);
-          await new Promise((resolve) => window.setTimeout(resolve, 700));
+          await new Promise((resolve) => window.setTimeout(resolve, 800));
         }
       }
-
       window.alert(lastError || "Could not send the prompt.");
     } finally {
       setSending(false);
@@ -265,79 +271,111 @@ export function App() {
       <div className="layout">
         <aside className="sidebar">
           <div className="side-heading">Projects</div>
-          {projects.map((project) => <button key={project.id} className={`project-row ${selectedProject === project.id ? "selected" : ""}`} onClick={() => setSelectedProject(project.id)}>{project.id === "inbox" ? <Inbox size={16} /> : <LayoutGrid size={16} />}<span>{project.name}</span><span className="count">{sessions.filter((session) => session.projectId === project.id).length}</span></button>)}
+          {projects.map((project) => (
+            <button key={project.id} className={"project-row " + (selectedProject === project.id ? "selected" : "")} onClick={() => { setSelectedProject(project.id); setSelectedSessionId(null); }}>
+              {project.id === "inbox" ? <Inbox size={16} /> : <LayoutGrid size={16} />}<span>{project.name}</span><span className="count">{sessions.filter((session) => session.projectId === project.id).length}</span>
+            </button>
+          ))}
         </aside>
 
-        <main className="sessions">
-          <div className="sessions-header">
-            <div><h2>{projects.find((project) => project.id === selectedProject)?.name}</h2><span>{projectSessions.length} conversations</span></div>
-            <button className="refresh" onClick={() => void refresh()}>{loading ? "Scanning…" : "Rescan"}</button>
-          </div>
+        <main className="main-area">
+          <div className={"workspace-grid " + (selectedSession ? "has-selection" : "")}>
+            <section className="session-column">
+              <div className="sessions-header">
+                <div><h2>{projects.find((project) => project.id === selectedProject)?.name}</h2><span>{projectSessions.length} conversations</span></div>
+                <button className="refresh" onClick={() => void refresh()}>{loading ? "Scanning…" : "Rescan"}</button>
+              </div>
 
-          <div className="view-filters">
-            {([["all", "All"], ["open", "Open"], ["discarded", "Not loaded"], ["closed", "Closed"]] as const).map(([value, label]) => <button key={value} className={viewFilter === value ? "active" : ""} onClick={() => setViewFilter(value)}>{label}<span>{filterCounts[value]}</span></button>)}
-          </div>
+              <div className="view-filters">
+                {([["all", "All"], ["open", "Open"], ["discarded", "Not loaded"], ["closed", "Closed"]] as const).map(([value, label]) => (
+                  <button key={value} className={viewFilter === value ? "active" : ""} onClick={() => setViewFilter(value)}>{label}<span>{filterCounts[value]}</span></button>
+                ))}
+              </div>
 
-          {visible.length === 0 ? (
-            <div className="empty"><div className="empty-icon"><Search size={22} /></div><h3>{query ? "No matching conversations" : viewFilter !== "all" ? `No ${viewFilter === "discarded" ? "unloaded" : viewFilter} sessions` : loading ? "Scanning your browser…" : "Nothing here yet"}</h3><p>{query ? "Try a different title or provider." : "Open a ChatGPT, Claude, or Gemini conversation and it will appear here automatically."}</p></div>
-          ) : (
-            <div className="session-list">
-              {visible.map((session) => {
-                const metaLabel = session.lifecycle === "closed" ? "Closed" : session.lifecycle === "discarded" ? "Not loaded" : statusMeta[session.status].label;
-                return <article key={`${session.id}:${session.tabId ?? "closed"}`} className={`session-card ${session.id === selectedSessionId ? "selected-session" : ""} ${session.lifecycle === "closed" ? "closed-session" : ""}`} onClick={() => { setSelectedSessionId(session.id); void openSession(session); }} title={session.lifecycle === "closed" ? "Click to reopen this conversation" : session.lifecycle === "discarded" ? "This tab is unloaded from memory. Clicking it will load the tab." : session.title}>
-                  <div className={`provider-dot ${session.provider}`} />
-                  <div className="session-main"><div className="session-title">{session.title}</div><div className={`session-meta ${session.lifecycle}`}>{getProviderLabel(session.provider)} · {metaLabel}</div></div>
-                  <div className="session-actions" onClick={(event) => event.stopPropagation()}>
-                    <select className="move-select" aria-label="Move to project" value={session.projectId ?? "inbox"} onChange={(event) => void moveSession(session, event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-                    <button className={`pin ${session.pinned ? "active" : ""}`} onClick={() => void togglePin(session)} title="Pin"><Pin size={15} /></button>
-                    {session.lifecycle !== "closed" && session.tabId !== null && <button className="session-close" onClick={() => void closeSession(session)} title="Close browser tab"><X size={14} /></button>}
-                  </div>
-                </article>;
-              })}
-            </div>
-          )}
-          {selectedSessionId && sessions.some((session) => session.id === selectedSessionId) && (() => {
-            const selected = sessions.find((session) => session.id === selectedSessionId)!;
-            return (
-              <section className="conversation-panel">
-                <div className="conversation-header">
-                  <div>
-                    <span className={`provider-badge ${selected.provider}`}>{getProviderLabel(selected.provider)}</span>
-                    <h3>{selected.title}</h3>
-                    <span className="conversation-status">{statusMeta[selected.status].label} · {selected.lifecycle}</span>
-                  </div>
-                  <button className="refresh" onClick={() => void openSession(selected)}>Focus tab</button>
+              {visible.length === 0 ? (
+                <div className="empty">
+                  <div className="empty-icon"><Search size={22} /></div>
+                  <h3>{query ? "No matching conversations" : viewFilter !== "all" ? "No " + (viewFilter === "discarded" ? "unloaded" : viewFilter) + " sessions" : loading ? "Scanning your browser…" : "Nothing here yet"}</h3>
+                  <p>{query ? "Try a different title or provider." : "Open a ChatGPT, Claude, or Gemini conversation and it will appear here automatically."}</p>
                 </div>
+              ) : (
+                <div className="session-list">
+                  {visible.map((session) => {
+                    const metaLabel = session.lifecycle === "closed" ? "Closed" : session.lifecycle === "discarded" ? "Not loaded" : statusMeta[session.status].label;
+                    return (
+                      <article
+                        key={session.id + ":" + (session.tabId ?? "closed")}
+                        className={"session-card " + (session.id === selectedSessionId ? "selected-session " : "") + (session.lifecycle === "closed" ? "closed-session" : "")}
+                        onClick={() => setSelectedSessionId(session.id)}
+                        title="Select this conversation"
+                      >
+                        <div className={"provider-dot " + session.provider} />
+                        <div className="session-main">
+                          <div className="session-title">{session.title}</div>
+                          <div className={"session-meta " + session.lifecycle}>{getProviderLabel(session.provider)} · {metaLabel}</div>
+                        </div>
+                        <div className="session-actions" onClick={(event) => event.stopPropagation()}>
+                          <select className="move-select" aria-label="Move to project" value={session.projectId ?? "inbox"} onChange={(event) => void moveSession(session, event.target.value)}>
+                            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                          </select>
+                          <button className={"pin " + (session.pinned ? "active" : "")} onClick={() => void togglePin(session)} title="Pin"><Pin size={15} /></button>
+                          {session.lifecycle !== "closed" && session.tabId !== null && <button className="session-close" onClick={() => void closeSession(session)} title="Close browser tab"><X size={14} /></button>}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
 
-                {(selected.latestUser || selected.latestAssistant) && (
-                  <div className="latest-turn">
-                    {selected.latestUser && <div><span>You</span><p>{selected.latestUser}</p></div>}
-                    {selected.latestAssistant && <div><span>{getProviderLabel(selected.provider)}</span><p>{selected.latestAssistant}</p></div>}
+            <section className="session-detail">
+              {!selectedSession ? (
+                <div className="detail-empty"><div className="detail-empty-icon"><LayoutGrid size={24} /></div><h3>Select an AI session</h3><p>Its conversation, status, and continue box will live here. Opening the browser tab is optional.</p></div>
+              ) : (
+                <>
+                  <header className="detail-header">
+                    <button className="back-button" onClick={() => setSelectedSessionId(null)} title="Back to sessions"><ArrowLeft size={16} /></button>
+                    <div className="detail-heading">
+                      <span className={"provider-badge " + selectedSession.provider}>{getProviderLabel(selectedSession.provider)}</span>
+                      <h3>{selectedSession.title}</h3>
+                      <div className="detail-subline">{statusMeta[selectedSession.status].label} · {selectedSession.lifecycle}{selectedSession.snapshotAt ? " · conversation cached" : ""}</div>
+                    </div>
+                    <div className="detail-actions">
+                      <button className="refresh" onClick={() => void openInChrome(selectedSession)}><ExternalLink size={13} /> Open in Chrome</button>
+                      {selectedSession.lifecycle !== "closed" && selectedSession.tabId !== null && <button className="session-close" onClick={() => void closeSession(selectedSession)} title="Close browser tab"><X size={14} /></button>}
+                    </div>
+                  </header>
+
+                  <div className="message-list">
+                    {selectedSession.messages && selectedSession.messages.length > 0 ? (
+                      selectedSession.messages.map((message) => (
+                        <article key={message.id} className={"message " + message.role}>
+                          <div className="message-label">{message.role === "user" ? "You" : getProviderLabel(selectedSession.provider)}</div>
+                          <div className="message-body">{message.text}</div>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="transcript-empty">
+                        <h4>No conversation snapshot yet</h4>
+                        <p>Workspace will capture the rendered conversation from the provider tab automatically. Open the provider once when a session has never been captured.</p>
+                        <button className="refresh" onClick={() => void openInChrome(selectedSession)}>Open in Chrome</button>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                <div className="composer">
-                  <textarea
-                    value={composer}
-                    onChange={(event) => setComposer(event.target.value)}
-                    placeholder={`Continue this ${getProviderLabel(selected.provider)} conversation…`}
-                    onKeyDown={(event) => {
+                  <div className="composer">
+                    <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={"Continue this " + getProviderLabel(selectedSession.provider) + " conversation…"} onKeyDown={(event) => {
                       if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
                         event.preventDefault();
-                        void sendPrompt(selected);
+                        void sendPrompt(selectedSession);
                       }
-                    }}
-                  />
-                  <div className="composer-footer">
-                    <span>Ctrl/Cmd + Enter to send</span>
-                    <button className="send-button" disabled={!composer.trim() || sending} onClick={() => void sendPrompt(selected)}>
-                      {sending ? "Sending…" : "Send"}
-                    </button>
+                    }} />
+                    <div className="composer-footer"><span>Ctrl/Cmd + Enter to send · provider tab stays optional</span><button className="send-button" disabled={!composer.trim() || sending} onClick={() => void sendPrompt(selectedSession)}>{sending ? "Sending…" : "Send"}</button></div>
                   </div>
-                </div>
-              </section>
-            );
-          })()}
+                </>
+              )}
+            </section>
+          </div>
         </main>
       </div>
     </div>
