@@ -175,7 +175,7 @@ export function App() {
 
     void loadSelectedConversation();
     return () => { cancelled = true; };
-  }, [selectedSessionId, selectedSession?.tabId, selectedSession?.lifecycle]);
+  }, [selectedSessionId, sessions]);
 
   const projectSessions = sessions.filter((session) => session.projectId === selectedProject);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
