@@ -3,6 +3,7 @@ import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlu
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot } from "./chrome";
 import { getProviderLabel } from "./providers";
 import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
+import { getSessionMessages } from "./sessionDb";
 
 const seedProjects: Project[] = [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }];
 const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }> = {
@@ -14,17 +15,18 @@ const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }
 const lifecycleRank = { open: 0, discarded: 1, closed: 2 } as const;
 const statusRank: Record<SessionStatus, number> = { "needs-you": 0, working: 1, done: 2, idle: 3 };
 type ViewFilter = "all" | "open" | "discarded" | "closed";
+type StatusFilter = SessionStatus | null;
 
 function normalizeStoredSession(session: AISession): AISession {
   const lifecycle = session.lifecycle ?? (session.tabId === null ? "closed" : session.discarded ? "discarded" : "open");
-  return { ...session, tabId: session.tabId ?? null, windowId: session.windowId ?? null, lifecycle, discarded: lifecycle === "discarded", projectId: session.projectId ?? "inbox", messages: session.messages ?? [] };
+  return { ...session, tabId: session.tabId ?? null, windowId: session.windowId ?? null, lifecycle, discarded: lifecycle === "discarded", projectId: session.projectId ?? "inbox" };
 }
 
 function sessionSignature(sessions: AISession[]) {
   return JSON.stringify(sessions.map((session) => [
     session.id, session.title, session.url, session.tabId, session.windowId, session.status,
     session.lifecycle, session.projectId, session.pinned, session.lastSeen, session.lastActivityAt,
-    session.latestUser, session.latestAssistant, session.snapshotAt, session.messages?.length ?? 0,
+    session.latestUser, session.latestAssistant, session.snapshotAt,
   ]));
 }
 
@@ -33,11 +35,13 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>(seedProjects);
   const [query, setQuery] = useState("");
   const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(null);
   const [selectedProject, setSelectedProject] = useState("inbox");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedMessages, setSelectedMessages] = useState<SessionMessage[]>([]);
   const refreshTimer = useRef<number | null>(null);
   const refreshGeneration = useRef(0);
 
@@ -53,7 +57,7 @@ export function App() {
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
-      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number; messages?: SessionMessage[] }>;
+      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
       const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map((session) => normalizeStoredSession({
         ...session,
@@ -88,7 +92,6 @@ export function App() {
           latestUser: liveState?.latestUser ?? previous?.latestUser,
           latestAssistant: liveState?.latestAssistant ?? previous?.latestAssistant,
           snapshotAt: liveState?.observedAt ?? previous?.snapshotAt,
-          messages: liveState?.messages ?? providerState?.messages ?? previous?.messages ?? [],
           projectId,
           pinned: isPinned,
           lastSeen: previous?.lastSeen ?? session.lastSeen,
@@ -102,20 +105,8 @@ export function App() {
       const merged = [...liveSessions, ...closedSessions];
       await chrome.storage.local.set({ sessions: merged, sessionMetadata: metadata });
       setSessions((current) => sessionSignature(current) === sessionSignature(merged) ? current : merged);
-      void captureOpenSnapshots(liveSessions);
     } finally {
       if (generation === refreshGeneration.current) setLoading(false);
-    }
-  }
-
-  async function captureOpenSnapshots(candidates: AISession[]) {
-    const open = candidates.filter((session) => session.lifecycle === "open" && session.tabId !== null);
-    for (let index = 0; index < open.length; index += 8) {
-      const batch = open.slice(index, index + 8);
-      await Promise.all(batch.map(async (session) => {
-        if (session.tabId === null) return;
-        await requestSessionSnapshot(session.tabId);
-      }));
     }
   }
 
@@ -134,7 +125,6 @@ export function App() {
         latestUser: message.latestUser || session.latestUser,
         latestAssistant: message.latestAssistant || session.latestAssistant,
         snapshotAt: message.observedAt || session.snapshotAt,
-        messages: message.messages ?? session.messages,
       } : session));
     };
 
@@ -160,20 +150,48 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSelectedConversation() {
+      setSelectedMessages([]);
+      if (!selectedSessionId) return;
+
+      const session = sessions.find((item) => item.id === selectedSessionId);
+      if (!session) return;
+
+      let fresh: SessionMessage[] = [];
+
+      if (session.lifecycle === "open" && session.tabId !== null) {
+        const snapshot = await requestSessionSnapshot(session.tabId);
+        fresh = snapshot?.messages ?? [];
+      }
+
+      const cached = await getSessionMessages(session.id);
+      const next = cached.length >= fresh.length ? cached : fresh;
+
+      if (!cancelled) setSelectedMessages(next);
+    }
+
+    void loadSelectedConversation();
+    return () => { cancelled = true; };
+  }, [selectedSessionId, sessions]);
+
   const projectSessions = sessions.filter((session) => session.projectId === selectedProject);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const visible = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     return projectSessions
       .filter((session) => viewFilter === "all" || session.lifecycle === viewFilter)
+      .filter((session) => !statusFilter || session.status === statusFilter)
       .filter((session) => !normalized || session.title.toLocaleLowerCase().includes(normalized) || getProviderLabel(session.provider).toLocaleLowerCase().includes(normalized))
       .sort((a, b) => Number(b.pinned) - Number(a.pinned) || statusRank[a.status] - statusRank[b.status] || lifecycleRank[a.lifecycle] - lifecycleRank[b.lifecycle] || a.title.localeCompare(b.title));
-  }, [projectSessions, query, viewFilter]);
+  }, [projectSessions, query, statusFilter, viewFilter]);
 
   const counts = {
     working: projectSessions.filter((session) => session.status === "working" && session.lifecycle === "open").length,
-    needs: projectSessions.filter((session) => session.status === "needs-you" && session.lifecycle === "open").length,
-    done: projectSessions.filter((session) => session.status === "done" && session.lifecycle === "open").length,
+    needs: projectSessions.filter((session) => session.status === "needs-you").length,
+    done: projectSessions.filter((session) => session.status === "done").length,
   };
   const filterCounts = {
     all: projectSessions.length,
@@ -260,9 +278,9 @@ export function App() {
       <section className="attention">
         <div className="attention-header"><div><span className="section-kicker">Attention</span><p>See what needs you without opening every tab.</p></div><span className="live-dot" /></div>
         <div className="attention-grid">
-          <Stat icon={<CircleAlert size={16} />} label="Needs you" value={counts.needs} />
-          <Stat icon={<Activity size={16} />} label="Working" value={counts.working} />
-          <Stat icon={<CheckCircle2 size={16} />} label="Done" value={counts.done} />
+          <Stat icon={<CircleAlert size={16} />} label="Needs you" value={counts.needs} active={statusFilter === "needs-you"} onClick={() => { setStatusFilter(statusFilter === "needs-you" ? null : "needs-you"); setSelectedSessionId(null); }} />
+          <Stat icon={<Activity size={16} />} label="Working" value={counts.working} active={statusFilter === "working"} onClick={() => { setStatusFilter(statusFilter === "working" ? null : "working"); setSelectedSessionId(null); }} />
+          <Stat icon={<CheckCircle2 size={16} />} label="Done" value={counts.done} active={statusFilter === "done"} onClick={() => { setStatusFilter(statusFilter === "done" ? null : "done"); setSelectedSessionId(null); }} />
         </div>
       </section>
 
@@ -295,7 +313,7 @@ export function App() {
               {visible.length === 0 ? (
                 <div className="empty">
                   <div className="empty-icon"><Search size={22} /></div>
-                  <h3>{query ? "No matching conversations" : viewFilter !== "all" ? "No " + (viewFilter === "discarded" ? "unloaded" : viewFilter) + " sessions" : loading ? "Scanning your browser…" : "Nothing here yet"}</h3>
+                  <h3>{query ? "No matching conversations" : statusFilter ? "No " + statusMeta[statusFilter].label.toLowerCase() + " sessions" : viewFilter !== "all" ? "No " + (viewFilter === "discarded" ? "unloaded" : viewFilter) + " sessions" : loading ? "Scanning your browser…" : "Nothing here yet"}</h3>
                   <p>{query ? "Try a different title or provider." : "Open a ChatGPT, Claude, or Gemini conversation and it will appear here automatically."}</p>
                 </div>
               ) : (
@@ -338,7 +356,7 @@ export function App() {
                     <div className="detail-heading">
                       <span className={"provider-badge " + selectedSession.provider}>{getProviderLabel(selectedSession.provider)}</span>
                       <h3>{selectedSession.title}</h3>
-                      <div className="detail-subline">{statusMeta[selectedSession.status].label} · {selectedSession.lifecycle}{selectedSession.snapshotAt ? " · conversation cached" : ""}</div>
+                      <div className="detail-subline">{statusMeta[selectedSession.status].label} · {selectedSession.lifecycle}{selectedMessages.length ? " · conversation cached locally" : ""}</div>
                     </div>
                     <div className="detail-actions">
                       <button className="refresh" onClick={() => void openInChrome(selectedSession)}><ExternalLink size={13} /> Open in Chrome</button>
@@ -347,8 +365,8 @@ export function App() {
                   </header>
 
                   <div className="message-list">
-                    {selectedSession.messages && selectedSession.messages.length > 0 ? (
-                      selectedSession.messages.map((message) => (
+                    {selectedMessages.length > 0 ? (
+                      selectedMessages.map((message) => (
                         <article key={message.id} className={"message " + message.role}>
                           <div className="message-label">{message.role === "user" ? "You" : getProviderLabel(selectedSession.provider)}</div>
                           <div className="message-body">{message.text}</div>
@@ -382,6 +400,23 @@ export function App() {
   );
 }
 
-function Stat({ icon, label, value }: { icon: import("react").ReactNode; label: string; value: number }) {
-  return <div className="stat"><div className="stat-icon">{icon}</div><div><strong>{value}</strong><span>{label}</span></div></div>;
+function Stat({
+  icon,
+  label,
+  value,
+  active = false,
+  onClick,
+}: {
+  icon: import("react").ReactNode;
+  label: string;
+  value: number;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button className={"stat stat-button " + (active ? "active" : "")} onClick={onClick} type="button">
+      <div className="stat-icon">{icon}</div>
+      <div><strong>{value}</strong><span>{label}</span></div>
+    </button>
+  );
 }

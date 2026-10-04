@@ -1,3 +1,5 @@
+import { saveSessionMessages } from "./session-db.js";
+
 const PROVIDER_HOSTS = {
   "chatgpt.com": "chatgpt",
   "chat.openai.com": "chatgpt",
@@ -91,7 +93,6 @@ async function upsertTab(tab, patch = {}) {
     latestUser: patch.latestUser ?? previous.latestUser ?? "",
     latestAssistant: patch.latestAssistant ?? previous.latestAssistant ?? "",
     snapshotAt: patch.timestamp ?? previous.snapshotAt,
-    messages: patch.messages ? normalizeMessages(patch.messages) : previous.messages ?? [],
   };
 
   await writeRegistry(registry);
@@ -108,8 +109,10 @@ chrome.runtime.onStartup.addListener(() => { void syncOpenTabs(); });
 chrome.tabs.onCreated.addListener((tab) => { void upsertTab(tab); });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (!tab.url && !changeInfo.url) return;
-  void upsertTab({ ...tab, url: changeInfo.url || tab.url }, {});
+  const hasIdentityChange = changeInfo.url !== undefined || changeInfo.title !== undefined || changeInfo.discarded !== undefined;
+  if (hasIdentityChange && (tab.url || changeInfo.url)) {
+    void upsertTab({ ...tab, url: changeInfo.url || tab.url }, {});
+  }
   if (changeInfo.status === "complete" && tab.url && providerFromUrl(tab.url)) void injectBridge(tabId);
 });
 
@@ -143,6 +146,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     const previous = registry[id] || {};
     const observedAt = message.timestamp || Date.now();
     const messages = normalizeMessages(message.messages);
+    if (messages.length) await saveSessionMessages(id, messages);
 
     registry[id] = {
       id,
@@ -161,7 +165,6 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       latestUser: message.latestUser || previous.latestUser || "",
       latestAssistant: message.latestAssistant || previous.latestAssistant || "",
       snapshotAt: observedAt,
-      messages: messages.length ? messages : previous.messages || [],
     };
 
     await writeRegistry(registry);
@@ -174,7 +177,6 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       latestUser: registry[id].latestUser,
       latestAssistant: registry[id].latestAssistant,
       observedAt,
-      messages: registry[id].messages,
     };
     await chrome.storage.local.set({ sessionStates: states });
 
@@ -187,7 +189,6 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         latestUser: registry[id].latestUser,
         latestAssistant: registry[id].latestAssistant,
         observedAt,
-        messages: registry[id].messages,
       });
     } catch {}
   })();

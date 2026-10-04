@@ -1,7 +1,10 @@
 (() => {
   if (window.top !== window) return;
-  if (window.__AI_WORKSPACE_PROVIDER_BRIDGE__) return;
-  window.__AI_WORKSPACE_PROVIDER_BRIDGE__ = true;
+
+  const BRIDGE_VERSION = "2026-10-03-v3";
+  const previousBridge = window.__AI_WORKSPACE_PROVIDER_BRIDGE__;
+  if (previousBridge?.version === BRIDGE_VERSION) return;
+  previousBridge?.dispose?.();
 
   const hostname = location.hostname;
   const provider =
@@ -20,6 +23,9 @@
   let lastWorking = false;
   let doneTimer = null;
   let publishTimer = null;
+  let scanTimer = null;
+  let intervalId = null;
+  let lastPublishAt = 0;
 
   function sessionId() {
     return provider + ":" + location.host + (location.pathname.replace(/\/$/, "") || "/");
@@ -99,6 +105,7 @@
       status: statusOverride || (lastWorking ? "working" : "idle"),
       latestUser: users[users.length - 1]?.text || "",
       latestAssistant: assistants[assistants.length - 1]?.text || "",
+      lastRole: messages[messages.length - 1]?.role || null,
       messages,
       timestamp: Date.now(),
     };
@@ -110,16 +117,19 @@
   }
 
   function isWorking() {
-    return Array.from(document.querySelectorAll("button,[role='button'],[aria-label]")).some(isStopControl);
+    return Array.from(document.querySelectorAll("button[aria-label],button[title],[role='button'][aria-label],[role='button'][title]")).some(isStopControl);
   }
 
   function publish(status, title) {
     const snapshot = extractSnapshot(status);
     const latestUser = snapshot.latestUser.slice(0, 8000);
     const latestAssistant = snapshot.latestAssistant.slice(0, 12000);
-    const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant + "|" + JSON.stringify(snapshot.messages);
+    const now = Date.now();
+    if (status === "working" && now - lastPublishAt < 2000) return;
+    const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant + "|" + snapshot.messages.length + "|" + snapshot.lastRole;
     if (signature === lastSignature) return;
     lastSignature = signature;
+    lastPublishAt = now;
 
     try {
       chrome.runtime.sendMessage({
@@ -142,7 +152,15 @@
     publishTimer = setTimeout(() => {
       publishTimer = null;
       publish(status, title);
-    }, 500);
+    }, 700);
+  }
+
+  function scheduleScan() {
+    if (scanTimer !== null) return;
+    scanTimer = setTimeout(() => {
+      scanTimer = null;
+      scan();
+    }, 300);
   }
 
   function scan() {
@@ -163,7 +181,11 @@
       lastWorking = false;
       queuePublish("done", title);
       if (doneTimer) clearTimeout(doneTimer);
-      doneTimer = setTimeout(() => queuePublish("idle", pageTitle()), 60000);
+      doneTimer = setTimeout(() => {
+        const next = extractSnapshot();
+        const nextStatus = next.lastRole === "assistant" && findInput() ? "needs-you" : "idle";
+        queuePublish(nextStatus, pageTitle());
+      }, 15000);
       return;
     }
 
@@ -218,10 +240,10 @@
     return { ok: true };
   }
 
-  const observer = new MutationObserver(() => scan());
+  const observer = new MutationObserver(() => scheduleScan());
   observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
   scan();
-  setInterval(scan, 4000);
+  intervalId = setInterval(scan, 5000);
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "ai-workspace:request-snapshot") {
@@ -243,9 +265,14 @@
     return false;
   });
 
-  window.addEventListener("unload", () => {
+  function dispose() {
     observer.disconnect();
     if (doneTimer) clearTimeout(doneTimer);
     if (publishTimer) clearTimeout(publishTimer);
-  });
+    if (scanTimer !== null) clearTimeout(scanTimer);
+    if (intervalId !== null) clearInterval(intervalId);
+  }
+
+  window.__AI_WORKSPACE_PROVIDER_BRIDGE__ = { version: BRIDGE_VERSION, dispose };
+  window.addEventListener("unload", dispose);
 })();
