@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlus, Inbox, LayoutGrid, Pin, Search, X } from "lucide-react";
+import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, Pin, Search, X } from "lucide-react";
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot } from "./chrome";
 import { getProviderLabel } from "./providers";
 import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
@@ -16,6 +16,89 @@ const lifecycleRank = { open: 0, discarded: 1, closed: 2 } as const;
 const statusRank: Record<SessionStatus, number> = { "needs-you": 0, working: 1, done: 2, idle: 3 };
 type ViewFilter = "all" | "open" | "discarded" | "closed";
 type StatusFilter = SessionStatus | null;
+
+interface ProjectSuggestion {
+  key: string;
+  name: string;
+  sessionIds: string[];
+  sampleTitles: string[];
+}
+
+const PROJECT_PATTERNS: Array<{ key: string; name: string; match: RegExp }> = [
+  { key: "trainclear", name: "TrainClear", match: /trainclear/i },
+  { key: "openmontage", name: "OpenMontage", match: /openmontage/i },
+  { key: "roblox", name: "Roblox", match: /roblox/i },
+  { key: "comfyui", name: "ComfyUI", match: /comfy\s*ui/i },
+  { key: "youtube", name: "YouTube", match: /youtube/i },
+  { key: "autonomous-scraper", name: "Autonomous Scraper", match: /autonomous[ -]+scraper/i },
+  { key: "visual-investigator", name: "Visual Investigator", match: /visual[ -]+investigator/i },
+  { key: "ai-workspace", name: "AI Workspace", match: /ai[ -]+chat[ -]+workspace|ai[ -]+workspace/i },
+];
+
+const PROJECT_STOP_WORDS = new Set([
+  "the", "and", "for", "with", "from", "this", "that", "your", "about", "into", "after", "before",
+  "help", "helping", "chat", "conversation", "google", "gemini", "claude", "chatgpt", "openai",
+  "project", "design", "request", "ideas", "idea", "full", "app", "new", "fixing", "using",
+  "analysis", "analysis", "questions", "question", "exploring", "explore", "update", "updates",
+  "guide", "explanation", "explained", "strategy", "planning", "implementation", "implementation",
+]);
+
+function buildProjectSuggestions(sessions: AISession[], dismissed: Record<string, boolean>): ProjectSuggestion[] {
+  const inbox = sessions.filter((session) => session.projectId === "inbox");
+  if (inbox.length < 4) return [];
+
+  const suggestions: ProjectSuggestion[] = [];
+
+  for (const pattern of PROJECT_PATTERNS) {
+    const matching = inbox.filter((session) => pattern.match.test(session.title));
+    if (matching.length >= 3 && !dismissed[pattern.key]) {
+      suggestions.push({
+        key: pattern.key,
+        name: pattern.name,
+        sessionIds: matching.map((session) => session.id),
+        sampleTitles: matching.slice(0, 3).map((session) => session.title),
+      });
+    }
+  }
+
+  const tokenGroups = new Map<string, AISession[]>();
+  for (const session of inbox) {
+    const tokens = session.title
+      .toLocaleLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .filter((token) => token.length >= 5 && !PROJECT_STOP_WORDS.has(token));
+
+    for (const token of new Set(tokens)) {
+      const group = tokenGroups.get(token) ?? [];
+      group.push(session);
+      tokenGroups.set(token, group);
+    }
+  }
+
+  const maxGroupSize = Math.max(4, Math.floor(inbox.length * 0.6));
+  const fallback = [...tokenGroups.entries()]
+    .filter(([token, group]) => group.length >= 4 && group.length <= maxGroupSize && !dismissed["keyword:" + token])
+    .sort((a, b) => (b[1].length * b[0].length) - (a[1].length * a[0].length));
+
+  for (const [token, group] of fallback) {
+    const name = token.charAt(0).toLocaleUpperCase() + token.slice(1);
+    if (suggestions.some((suggestion) => suggestion.name.toLocaleLowerCase() === name.toLocaleLowerCase())) continue;
+
+    suggestions.push({
+      key: "keyword:" + token,
+      name,
+      sessionIds: group.map((session) => session.id),
+      sampleTitles: group.slice(0, 3).map((session) => session.title),
+    });
+
+    if (suggestions.length >= 6) break;
+  }
+
+  return suggestions
+    .sort((a, b) => b.sessionIds.length - a.sessionIds.length)
+    .slice(0, 6);
+}
 
 function normalizeStoredSession(session: AISession): AISession {
   const lifecycle = session.lifecycle ?? (session.tabId === null ? "closed" : session.discarded ? "discarded" : "open");
@@ -42,6 +125,7 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedMessages, setSelectedMessages] = useState<SessionMessage[]>([]);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<string, boolean>>({});
   const refreshTimer = useRef<number | null>(null);
   const refreshGeneration = useRef(0);
 
@@ -56,6 +140,7 @@ export function App() {
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
+      const savedDismissedSuggestions = (saved.dismissedSuggestions ?? {}) as Record<string, boolean>;
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
       const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
@@ -69,6 +154,7 @@ export function App() {
 
       const matchedStoredIds = new Set<string>();
       setProjects(savedProjects.length ? savedProjects : seedProjects);
+      setDismissedSuggestions(savedDismissedSuggestions);
 
       const liveSessions = discovered.map((session) => {
         const legacyId = session.provider + ":" + session.tabId;
@@ -200,6 +286,11 @@ export function App() {
     closed: projectSessions.filter((session) => session.lifecycle === "closed").length,
   };
 
+  const projectSuggestions = useMemo(
+    () => buildProjectSuggestions(sessions, dismissedSuggestions),
+    [sessions, dismissedSuggestions],
+  );
+
   async function createProject() {
     const name = window.prompt("Project name");
     if (!name?.trim()) return;
@@ -209,6 +300,40 @@ export function App() {
     setSelectedProject(project.id);
     setSelectedSessionId(null);
     await chrome.storage.local.set({ projects: nextProjects });
+  }
+
+  async function createSuggestedProject(suggestion: ProjectSuggestion) {
+    const existingNames = new Set(projects.map((project) => project.name.toLocaleLowerCase()));
+    let name = suggestion.name;
+    let suffix = 2;
+    while (existingNames.has(name.toLocaleLowerCase())) {
+      name = suggestion.name + " " + suffix;
+      suffix += 1;
+    }
+
+    const project: Project = { id: crypto.randomUUID(), name, color: "#8b5cf6" };
+    const saved = await chrome.storage.local.get("sessionAssignments");
+    const sessionAssignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
+
+    for (const sessionId of suggestion.sessionIds) {
+      sessionAssignments[sessionId] = project.id;
+    }
+
+    const nextProjects = [...projects, project];
+    await chrome.storage.local.set({ projects: nextProjects, sessionAssignments });
+
+    setProjects(nextProjects);
+    setSessions((current) => current.map((session) =>
+      suggestion.sessionIds.includes(session.id) ? { ...session, projectId: project.id } : session,
+    ));
+    setSelectedProject(project.id);
+    setSelectedSessionId(null);
+  }
+
+  async function dismissSuggestion(suggestion: ProjectSuggestion) {
+    const next = { ...dismissedSuggestions, [suggestion.key]: true };
+    setDismissedSuggestions(next);
+    await chrome.storage.local.set({ dismissedSuggestions: next });
   }
 
   async function moveSession(session: AISession, projectId: string) {
@@ -303,6 +428,44 @@ export function App() {
                 <div><h2>{projects.find((project) => project.id === selectedProject)?.name}</h2><span>{projectSessions.length} conversations</span></div>
                 <button className="refresh" onClick={() => void refresh()}>{loading ? "Scanning…" : "Rescan"}</button>
               </div>
+
+              {selectedProject === "inbox" && !query.trim() && !statusFilter && projectSuggestions.length > 0 && (
+                <section className="suggestions-panel">
+                  <div className="suggestions-header">
+                    <div className="suggestions-title">
+                      <Lightbulb size={15} />
+                      <div>
+                        <strong>Suggested projects</strong>
+                        <span>Review first — nothing moves until you approve it.</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="suggestion-list">
+                    {projectSuggestions.map((suggestion) => (
+                      <article key={suggestion.key} className="suggestion-card">
+                        <div className="suggestion-main">
+                          <div className="suggestion-name">
+                            <strong>{suggestion.name}</strong>
+                            <span>{suggestion.sessionIds.length} conversations</span>
+                          </div>
+                          <div className="suggestion-samples">
+                            {suggestion.sampleTitles.map((title) => <span key={title}>{title}</span>)}
+                          </div>
+                        </div>
+                        <div className="suggestion-actions">
+                          <button className="suggestion-create" onClick={() => void createSuggestedProject(suggestion)}>
+                            Create & move
+                          </button>
+                          <button className="suggestion-dismiss" onClick={() => void dismissSuggestion(suggestion)}>
+                            Dismiss
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               <div className="view-filters">
                 {([["all", "All"], ["open", "Open"], ["discarded", "Not loaded"], ["closed", "Closed"]] as const).map(([value, label]) => (
