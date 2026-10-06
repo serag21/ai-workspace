@@ -428,12 +428,13 @@ export function App() {
     try {
       const tabId = session.tabId ?? await ensureSessionTab(session);
       if (tabId === null) throw new Error("Could not reopen the conversation.");
+      const targetTabId = tabId;
 
-      async function send() {
-        return chrome.tabs.sendMessage(tabId, { type: "ai-workspace:send-prompt", text });
+      async function send(): Promise<{ ok?: boolean; error?: string }> {
+        return chrome.tabs.sendMessage(targetTabId, { type: "ai-workspace:send-prompt", text });
       }
 
-      let response;
+      let response: { ok?: boolean; error?: string } | undefined;
       try {
         response = await send();
       } catch (error) {
@@ -445,7 +446,7 @@ export function App() {
         }
 
         try {
-          await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+          await chrome.scripting.executeScript({ target: { tabId: targetTabId }, files: ["content.js"] });
           await new Promise((resolve) => window.setTimeout(resolve, 150));
           response = await send();
         } catch {
@@ -456,7 +457,7 @@ export function App() {
 
       if (response?.ok) {
         setComposer("");
-        setSessions((current) => current.map((item) => item.id === session.id ? { ...item, status: "working", lifecycle: "open", tabId } : item));
+        setSessions((current) => current.map((item) => item.id === session.id ? { ...item, status: "working", lifecycle: "open", tabId: targetTabId } : item));
         return;
       }
 
