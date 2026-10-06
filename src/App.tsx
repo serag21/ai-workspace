@@ -105,6 +105,59 @@ function normalizeStoredSession(session: AISession): AISession {
   return { ...session, tabId: session.tabId ?? null, windowId: session.windowId ?? null, lifecycle, discarded: lifecycle === "discarded", projectId: session.projectId ?? "inbox" };
 }
 
+const RELATED_STOP_WORDS = new Set([
+  "about", "after", "again", "before", "being", "could", "design", "doing", "from", "have", "into",
+  "just", "project", "should", "that", "their", "there", "these", "this", "using", "what", "when",
+  "where", "which", "with", "your", "conversation", "chat", "help", "question", "questions", "analysis",
+  "implementation", "update", "updates", "idea", "ideas", "full", "new", "working", "work",
+]);
+
+function meaningfulTokens(value: string) {
+  return new Set(
+    value
+      .toLocaleLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .filter((token) => token.length >= 5 && !RELATED_STOP_WORDS.has(token)),
+  );
+}
+
+function relatedScore(source: AISession, candidate: AISession) {
+  const sourceTitle = meaningfulTokens(source.title);
+  const candidateTitle = meaningfulTokens(candidate.title);
+  const sourceContext = meaningfulTokens([source.latestUser, source.latestAssistant].filter(Boolean).join(" "));
+  const candidateContext = meaningfulTokens([candidate.latestUser, candidate.latestAssistant].filter(Boolean).join(" "));
+
+  const sharedTitle = [...sourceTitle].filter((token) => candidateTitle.has(token));
+  const sharedContext = [...sourceContext].filter((token) => candidateContext.has(token));
+  const sharedAcross = [...sourceTitle].filter((token) => candidateContext.has(token));
+
+  let score = sharedTitle.length * 4 + sharedContext.length * 1.25 + sharedAcross.length * 1.5;
+  if (source.projectId && source.projectId !== "inbox" && source.projectId === candidate.projectId) score += 2;
+  if (source.provider !== candidate.provider) score += 0.5;
+  if (candidate.lifecycle === "open") score += 0.25;
+
+  return {
+    score,
+    sharedCount: new Set([...sharedTitle, ...sharedContext, ...sharedAcross]).size,
+    reason: source.projectId && source.projectId !== "inbox" && source.projectId === candidate.projectId
+      ? "Same project"
+      : candidate.provider !== source.provider
+        ? "Similar work on another AI"
+        : "Similar topic",
+  };
+}
+
+function buildRelatedSessions(source: AISession | null, sessions: AISession[]) {
+  if (!source) return [];
+  return sessions
+    .filter((session) => session.id !== source.id)
+    .map((session) => ({ session, ...relatedScore(source, session) }))
+    .filter((item) => item.sharedCount >= 2 && item.score >= 4)
+    .sort((a, b) => b.score - a.score || Number(b.session.lifecycle === "open") - Number(a.session.lifecycle === "open"))
+    .slice(0, 3);
+}
+
 function sessionSignature(sessions: AISession[]) {
   return JSON.stringify(sessions.map((session) => [
     session.id, session.title, session.url, session.tabId, session.windowId, session.status,
@@ -290,6 +343,10 @@ export function App() {
     () => buildProjectSuggestions(sessions, dismissedSuggestions),
     [sessions, dismissedSuggestions],
   );
+  const relatedSessions = useMemo(
+    () => buildRelatedSessions(selectedSession, sessions),
+    [selectedSession, sessions],
+  );
 
   async function createProject() {
     const name = window.prompt("Project name");
@@ -372,22 +429,38 @@ export function App() {
       const tabId = session.tabId ?? await ensureSessionTab(session);
       if (tabId === null) throw new Error("Could not reopen the conversation.");
 
-      let lastError = "";
-      for (let attempt = 0; attempt < 6; attempt += 1) {
+      async function send() {
+        return chrome.tabs.sendMessage(tabId, { type: "ai-workspace:send-prompt", text });
+      }
+
+      let response;
+      try {
+        response = await send();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const bridgeMissing = /receiving end does not exist|could not establish connection/i.test(message);
+        if (!bridgeMissing) {
+          window.alert("Could not confirm that the prompt was delivered. Open the provider tab to verify before trying again.");
+          return;
+        }
+
         try {
-          const response = await chrome.tabs.sendMessage(tabId, { type: "ai-workspace:send-prompt", text });
-          if (response?.ok) {
-            setComposer("");
-            setSessions((current) => current.map((item) => item.id === session.id ? { ...item, status: "working", lifecycle: "open", tabId } : item));
-            return;
-          }
-          lastError = response?.error || "The provider did not accept the prompt.";
-        } catch (error) {
-          lastError = error instanceof Error ? error.message : String(error);
-          await new Promise((resolve) => window.setTimeout(resolve, 800));
+          await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+          await new Promise((resolve) => window.setTimeout(resolve, 150));
+          response = await send();
+        } catch {
+          window.alert("The provider bridge was unavailable. Open the provider tab and try again.");
+          return;
         }
       }
-      window.alert(lastError || "Could not send the prompt.");
+
+      if (response?.ok) {
+        setComposer("");
+        setSessions((current) => current.map((item) => item.id === session.id ? { ...item, status: "working", lifecycle: "open", tabId } : item));
+        return;
+      }
+
+      window.alert(response?.error || "The provider did not accept the prompt. Nothing was retried automatically.");
     } finally {
       setSending(false);
     }
@@ -526,6 +599,29 @@ export function App() {
                       {selectedSession.lifecycle !== "closed" && selectedSession.tabId !== null && <button className="session-close" onClick={() => void closeSession(selectedSession)} title="Close browser tab"><X size={14} /></button>}
                     </div>
                   </header>
+
+                  {relatedSessions.length > 0 && (
+                    <section className="related-panel">
+                      <div className="related-header">
+                        <div>
+                          <strong>Related work</strong>
+                          <span>AI Workspace found nearby threads you may want to continue.</span>
+                        </div>
+                      </div>
+                      <div className="related-list">
+                        {relatedSessions.map(({ session, reason }) => (
+                          <button key={session.id} className="related-card" onClick={() => setSelectedSessionId(session.id)}>
+                            <div className={"provider-dot " + session.provider} />
+                            <div className="related-main">
+                              <strong>{session.title}</strong>
+                              <span>{getProviderLabel(session.provider)} · {reason}</span>
+                            </div>
+                            <span className="related-status">{statusMeta[session.status].label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
 
                   <div className="message-list">
                     {selectedMessages.length > 0 ? (
