@@ -20,7 +20,7 @@ export async function discoverOpenSessions(): Promise<AISession[]> {
     const provider = getProvider(tab.url);
     if (!provider) continue;
 
-    const id = getSessionId(provider, tab.url);
+    const id = getSessionId(provider, tab.url, tab.id);
     const session: AISession = {
       id,
       provider,
@@ -65,7 +65,7 @@ export async function ensureSessionTab(session: AISession): Promise<number | nul
   return tab.id;
 }
 
-async function waitForTabComplete(tabId: number): Promise<void> {
+export async function waitForTabComplete(tabId: number): Promise<void> {
   const current = await chrome.tabs.get(tabId);
   if (current.status === "complete") return;
 
