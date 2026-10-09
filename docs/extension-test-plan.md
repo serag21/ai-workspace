@@ -12,6 +12,12 @@ Use this for a release-candidate pass in a real Chrome profile. CI checks type/b
 
 ## 2. Discovery and identity
 
+- [ ] Rename two separate ChatGPT sessions in the same project to distinct nicknames such as “Mastermind” and “Thumbnail Studio.”
+- [ ] Confirm the nickname changes only AI Workspace's display name, not the provider's own conversation title.
+- [ ] Search for a nickname and confirm the renamed session is found.
+- [ ] Reload the extension and confirm nicknames persist.
+- [ ] Create a new provider chat, assign a nickname before sending, then send the first prompt and confirm the nickname survives the draft-to-conversation URL change.
+
 - [ ] Open one existing ChatGPT conversation, one Claude conversation, and one Gemini conversation.
 - [ ] Confirm all three appear without manually registering them.
 - [ ] Open a second conversation on each provider and confirm distinct sessions are shown.
