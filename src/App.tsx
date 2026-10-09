@@ -3,7 +3,7 @@ import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlu
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot, waitForTabComplete } from "./chrome";
 import { getProvider, getProviderLabel, getSessionId, isNewChatRoute } from "./providers";
 import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
-import { getSessionMessages, saveSessionMessages, searchSessionIds } from "./sessionDb";
+import { getSessionMessages, migrateSessionMessages, saveSessionMessages, searchSessionIds } from "./sessionDb";
 
 const seedProjects: Project[] = [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }];
 const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }> = {
@@ -372,6 +372,7 @@ export function App() {
         return;
       }
       const existing = sessionsRef.current.find((session) => session.id === actualId);
+      await migrateSessionMessages(draft.id, actualId);
       const migrated: AISession = {
         ...existing,
         ...draft,
