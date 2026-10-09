@@ -13,7 +13,7 @@ const MAX_ASSISTANT_PREVIEW = 800;
 const WORKING_PERSIST_INTERVAL_MS = 10000;
 
 function compactPreview(value, maxLength) {
-  const text = String(value || "").replace(/\\s+/g, " ").trim();
+  const text = String(value || "").replace(/\s+/g, " ").trim();
   return text.length > maxLength ? text.slice(0, maxLength - 1) + "…" : text;
 }
 
