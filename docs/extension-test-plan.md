@@ -58,7 +58,19 @@ Use this for a release-candidate pass in a real Chrome profile. CI checks type/b
 - [ ] Create a suggested project whose name already exists and confirm it does not overwrite the existing project.
 - [ ] Confirm search and status filters work inside All work and inside an individual project.
 
-## 7. Reliability and performance
+## 7. Start new chats and close tabs in bulk
+
+- [ ] Choose ChatGPT in the new-chat provider selector and click New chat; confirm it creates a background tab, selects it in Workspace, and does not steal focus.
+- [ ] Repeat for Claude and Gemini; verify each opens the correct new-chat surface while remaining in the user's signed-in provider session.
+- [ ] Confirm each fresh chat is assigned to the currently selected project, or Inbox if All work was selected.
+- [ ] Send a prompt to a new chat from Workspace; confirm it is sent once, the prompt preview appears, and the session continues to track correctly if the provider changes its URL after the first prompt.
+- [ ] Confirm a provider URL transition does not leave a duplicate closed draft alongside the actual conversation.
+- [ ] Close one completely blank new-chat draft; confirm this does not trigger a false “can't capture” warning.
+- [ ] In a project, use Close tabs and confirm it lists/progresses through the currently visible filtered set only.
+- [ ] During bulk close, verify conversation snapshots are saved before tabs are closed, and any conversation that cannot be captured and has no local cache is left open.
+- [ ] Confirm bulk close never closes unrelated tabs, and completed transcript cache remains available in All work.
+
+## 8. Reliability and performance
 
 - [ ] Repeat quick project/session switching while one response is streaming.
 - [ ] Observe ChatGPT/Claude/Gemini responsiveness with Workspace open versus closed; report any noticeable degradation.
@@ -68,7 +80,7 @@ Use this for a release-candidate pass in a real Chrome profile. CI checks type/b
 - [ ] Reload the extension while a provider tab remains open and check the content bridge reattaches without multiplying timers/listeners.
 - [ ] Check the browser console for errors, rejected promises, and selector exceptions.
 
-## 8. Known scope boundaries
+## 9. Known scope boundaries
 
 - [ ] Do not expect Workspace to reconstruct a chat that was already closed before the extension ever captured it.
 - [ ] Do not expect more than the latest 100 captured messages in the local transcript pane.
