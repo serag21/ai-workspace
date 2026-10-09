@@ -177,6 +177,7 @@ export function App() {
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [selectedMessages, setSelectedMessages] = useState<SessionMessage[]>([]);
   const [transcriptMatches, setTranscriptMatches] = useState<Set<string>>(new Set());
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<string, boolean>>({});
@@ -187,6 +188,7 @@ export function App() {
   async function refresh() {
     const generation = ++refreshGeneration.current;
     setLoading(true);
+    setScanError(null);
     try {
       const discovered = await discoverOpenSessions();
       const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata"]);
@@ -243,6 +245,10 @@ export function App() {
       const merged = [...liveSessions, ...closedSessions];
       await chrome.storage.local.set({ sessions: merged, sessionMetadata: metadata });
       setSessions((current) => sessionSignature(current) === sessionSignature(merged) ? current : merged);
+    } catch (error) {
+      if (generation === refreshGeneration.current) {
+        setScanError(error instanceof Error ? error.message : "Could not refresh AI sessions.");
+      }
     } finally {
       if (generation === refreshGeneration.current) setLoading(false);
     }
@@ -499,11 +505,19 @@ export function App() {
 
       if (response?.ok) {
         setComposer("");
-        setSessions((current) => current.map((item) => item.id === session.id ? { ...item, status: "working", lifecycle: "open", tabId: targetTabId } : item));
+        let targetWindowId = session.windowId;
+        try {
+          targetWindowId = (await chrome.tabs.get(targetTabId)).windowId;
+        } catch {}
+        setSessions((current) => current.map((item) => item.id === session.id
+          ? { ...item, status: "working", lifecycle: "open", tabId: targetTabId, windowId: targetWindowId }
+          : item));
         return;
       }
 
       window.alert(response?.error || "The provider did not accept the prompt. Nothing was retried automatically.");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not send the prompt.");
     } finally {
       setSending(false);
     }
@@ -548,6 +562,7 @@ export function App() {
                 <div><h2>{selectedProject === "all" ? "All work" : projects.find((project) => project.id === selectedProject)?.name}</h2><span>{projectSessions.length} conversations</span></div>
                 <button className="refresh" onClick={() => void refresh()}>{loading ? "Scanning…" : "Rescan"}</button>
               </div>
+              {scanError && <div className="scan-error" role="status">Could not refresh sessions: {scanError} <button onClick={() => void refresh()}>Retry</button></div>}
 
               {selectedProject === "inbox" && !query.trim() && !statusFilter && projectSuggestions.length > 0 && (
                 <section className="suggestions-panel">
