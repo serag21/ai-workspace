@@ -247,11 +247,16 @@ export function App() {
         const isPinned = pinned[session.id] ?? pinned[legacyId] ?? previous?.pinned ?? false;
         if (!session.discarded && !isGenericTitle) metadata[session.id] = session.title;
 
+        const previousStatus = previous?.status ?? session.status;
+        const statusIsStale = previous?.snapshotAt !== undefined &&
+          Date.now() - previous.snapshotAt > 45000;
+        const effectiveStatus = previousStatus === "working" && statusIsStale ? "idle" : previousStatus;
+
         return {
           ...session,
           title,
           customTitle: labels[session.id] ?? labels[legacyId] ?? previous?.customTitle,
-          status: previous?.status ?? session.status,
+          status: effectiveStatus,
           latestUser: previous?.latestUser,
           latestAssistant: previous?.latestAssistant,
           snapshotAt: previous?.snapshotAt,
