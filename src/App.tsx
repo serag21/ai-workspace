@@ -189,7 +189,7 @@ export function App() {
     setLoading(true);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "sessionStates"]);
+      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata"]);
       if (generation !== refreshGeneration.current) return;
 
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
@@ -197,7 +197,6 @@ export function App() {
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
       const savedDismissedSuggestions = (saved.dismissedSuggestions ?? {}) as Record<string, boolean>;
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
-      const sessionStates = (saved.sessionStates ?? {}) as Record<string, { status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
       const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map((session) => normalizeStoredSession({
         ...session,
@@ -222,17 +221,15 @@ export function App() {
         const title = session.discarded && isGenericTitle && cachedTitle ? cachedTitle : session.title;
         const projectId = assignments[session.id] ?? assignments[legacyId] ?? previous?.projectId ?? "inbox";
         const isPinned = pinned[session.id] ?? pinned[legacyId] ?? previous?.pinned ?? false;
-        const liveState = sessionStates[session.id] ?? sessionStates[legacyId];
-
         if (!session.discarded && !isGenericTitle) metadata[session.id] = session.title;
 
         return {
           ...session,
-          title: liveState?.title && !isGenericTitle ? liveState.title : title,
-          status: liveState?.status ?? previous?.status ?? session.status,
-          latestUser: liveState?.latestUser ?? previous?.latestUser,
-          latestAssistant: liveState?.latestAssistant ?? previous?.latestAssistant,
-          snapshotAt: liveState?.observedAt ?? previous?.snapshotAt,
+          title,
+          status: previous?.status ?? session.status,
+          latestUser: previous?.latestUser,
+          latestAssistant: previous?.latestAssistant,
+          snapshotAt: previous?.snapshotAt,
           projectId,
           pinned: isPinned,
           lastSeen: previous?.lastSeen ?? session.lastSeen,
@@ -245,7 +242,6 @@ export function App() {
 
       const merged = [...liveSessions, ...closedSessions];
       await chrome.storage.local.set({ sessions: merged, sessionMetadata: metadata });
-      if (saved.sessionStates) await chrome.storage.local.remove("sessionStates");
       setSessions((current) => sessionSignature(current) === sessionSignature(merged) ? current : merged);
     } finally {
       if (generation === refreshGeneration.current) setLoading(false);
@@ -287,6 +283,12 @@ export function App() {
     chrome.runtime.onMessage.addListener(onState);
     return () => chrome.runtime.onMessage.removeListener(onState);
   }, [selectedSessionId]);
+
+  useEffect(() => {
+    // Remove the pre-optimization duplicate state cache. Session status and
+    // compact previews now live once in sessionRegistry; full messages live in IndexedDB.
+    void chrome.storage.local.remove("sessionStates").catch(() => {});
+  }, []);
 
   useEffect(() => {
     void refresh();
