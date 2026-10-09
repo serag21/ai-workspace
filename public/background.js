@@ -8,6 +8,14 @@ const PROVIDER_HOSTS = {
 };
 
 const MAX_MESSAGES = 100;
+const MAX_USER_PREVIEW = 500;
+const MAX_ASSISTANT_PREVIEW = 800;
+const WORKING_PERSIST_INTERVAL_MS = 10000;
+
+function compactPreview(value, maxLength) {
+  const text = String(value || "").replace(/\\s+/g, " ").trim();
+  return text.length > maxLength ? text.slice(0, maxLength - 1) + "…" : text;
+}
 
 function providerFromUrl(url) {
   try {
@@ -90,8 +98,8 @@ async function upsertTab(tab, patch = {}) {
     lastActivityAt: patch.timestamp || previous.lastActivityAt || Date.now(),
     projectId: previous.projectId ?? null,
     pinned: previous.pinned ?? false,
-    latestUser: patch.latestUser ?? previous.latestUser ?? "",
-    latestAssistant: patch.latestAssistant ?? previous.latestAssistant ?? "",
+    latestUser: compactPreview(patch.latestUser ?? previous.latestUser ?? "", MAX_USER_PREVIEW),
+    latestAssistant: compactPreview(patch.latestAssistant ?? previous.latestAssistant ?? "", MAX_ASSISTANT_PREVIEW),
     snapshotAt: patch.timestamp ?? previous.snapshotAt,
   };
 
@@ -148,7 +156,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     const messages = normalizeMessages(message.messages);
     if (messages.length) await saveSessionMessages(id, messages);
 
-    registry[id] = {
+    const currentState = {
       id,
       provider,
       title: message.title || previous.title || sender.tab.title || "Untitled conversation",
@@ -162,32 +170,31 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       lastActivityAt: observedAt,
       projectId: previous.projectId ?? null,
       pinned: previous.pinned ?? false,
-      latestUser: message.latestUser || previous.latestUser || "",
-      latestAssistant: message.latestAssistant || previous.latestAssistant || "",
+      latestUser: compactPreview(message.latestUser || previous.latestUser || "", MAX_USER_PREVIEW),
+      latestAssistant: compactPreview(message.latestAssistant || previous.latestAssistant || "", MAX_ASSISTANT_PREVIEW),
       snapshotAt: observedAt,
     };
 
-    await writeRegistry(registry);
+    // Streaming updates are sent live to the workspace, but don't rewrite the
+    // entire registry on every token-like change. Persist a working heartbeat
+    // at most once every 10 seconds; persist every status transition immediately.
+    const workingHeartbeat = currentState.status === "working" &&
+      previous.status === "working" &&
+      observedAt - Number(previous.snapshotAt || 0) < WORKING_PERSIST_INTERVAL_MS;
 
-    const stateResult = await chrome.storage.local.get("sessionStates");
-    const states = stateResult.sessionStates || {};
-    states[id] = {
-      status: registry[id].status,
-      title: registry[id].title,
-      latestUser: registry[id].latestUser,
-      latestAssistant: registry[id].latestAssistant,
-      observedAt,
-    };
-    await chrome.storage.local.set({ sessionStates: states });
+    if (!workingHeartbeat) {
+      registry[id] = currentState;
+      await writeRegistry(registry);
+    }
 
     try {
       await chrome.runtime.sendMessage({
         type: "ai-workspace:session-state",
         sessionId: id,
-        status: registry[id].status,
-        title: registry[id].title,
-        latestUser: registry[id].latestUser,
-        latestAssistant: registry[id].latestAssistant,
+        status: currentState.status,
+        title: currentState.title,
+        latestUser: currentState.latestUser,
+        latestAssistant: currentState.latestAssistant,
         observedAt,
       });
     } catch {}
