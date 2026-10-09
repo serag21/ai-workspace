@@ -25,9 +25,22 @@ function providerFromUrl(url) {
   }
 }
 
-function sessionId(provider, url) {
+function isNewChatRoute(provider, url) {
+  try {
+    const path = new URL(url).pathname.replace(/\/+$/, "") || "/";
+    if (provider === "chatgpt") return path === "/";
+    if (provider === "claude") return path === "/" || path === "/new";
+    if (provider === "gemini") return path === "/" || path === "/app";
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function sessionId(provider, url, tabId) {
   try {
     const parsed = new URL(url);
+    if (tabId !== undefined && isNewChatRoute(provider, url)) return provider + ":draft:" + tabId;
     return provider + ":" + parsed.host + (parsed.pathname.replace(/\/$/, "") || "/");
   } catch {
     return provider + ":" + url;
@@ -80,8 +93,20 @@ async function upsertTab(tab, patch = {}) {
   const provider = providerFromUrl(tab.url);
   if (!provider) return;
 
-  const id = sessionId(provider, tab.url);
+  const id = sessionId(provider, tab.url, tab.id);
   const registry = await readRegistry();
+
+  // A draft ID is only a temporary identity for a blank new-chat route.
+  // Once the provider creates a real conversation URL, drop the old alias
+  // for that same tab so it doesn't linger as a duplicate closed session.
+  if (!id.includes(":draft:")) {
+    for (const [existingId, existing] of Object.entries(registry)) {
+      if (existingId.startsWith(provider + ":draft:") && existing.tabId === tab.id && existingId !== id) {
+        delete registry[existingId];
+      }
+    }
+  }
+
   const previous = registry[id] || {};
 
   registry[id] = {
@@ -150,7 +175,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     if (!provider) return;
 
     const registry = await readRegistry();
-    const id = message.sessionId || sessionId(provider, message.url);
+    const id = sessionId(provider, message.url, sender.tab.id);
     const previous = registry[id] || {};
     const observedAt = message.timestamp || Date.now();
     const messages = normalizeMessages(message.messages);
