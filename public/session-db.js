@@ -48,26 +48,33 @@ export async function saveSessionMessages(sessionId, messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
 
   const db = await openDatabase();
-  await new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    transaction.objectStore(STORE_NAME).put({
-      sessionId,
-      messages: boundMessages(messages),
-      updatedAt: Date.now(),
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, "readwrite");
+      transaction.objectStore(STORE_NAME).put({
+        sessionId,
+        messages: boundMessages(messages),
+        updatedAt: Date.now(),
+      });
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error ?? new Error("Could not save transcript."));
+      transaction.onabort = () => reject(transaction.error ?? new Error("Transcript save was aborted."));
     });
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error("Could not save transcript."));
-  });
-  db.close();
+  } finally {
+    db.close();
+  }
 }
 
 export async function getSessionMessages(sessionId) {
   const db = await openDatabase();
-  const result = await new Promise((resolve, reject) => {
-    const request = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(sessionId);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Could not read transcript."));
-  });
-  db.close();
-  return result?.messages ?? [];
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const request = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(sessionId);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error("Could not read transcript."));
+    });
+    return result?.messages ?? [];
+  } finally {
+    db.close();
+  }
 }
