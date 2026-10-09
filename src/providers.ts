@@ -20,11 +20,25 @@ export function getProviderLabel(p:Provider){
   return adapters.find(a=>a.provider===p)?.getLabel()??p;
 }
 
-export function getSessionId(provider:Provider,url:string):string{
-  try{
-    const parsed=new URL(url);
-    return `${provider}:${parsed.host}${parsed.pathname.replace(/\/$/,"")||"/"}`;
-  }catch{
+export function isNewChatRoute(provider: Provider, url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    if (provider === "chatgpt") return path === "/";
+    if (provider === "claude") return path === "/" || path === "/new";
+    if (provider === "gemini") return path === "/" || path === "/app";
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function getSessionId(provider: Provider, url: string, tabId?: number): string {
+  try {
+    const parsed = new URL(url);
+    if (tabId !== undefined && isNewChatRoute(provider, url)) return `${provider}:draft:${tabId}`;
+    return `${provider}:${parsed.host}${parsed.pathname.replace(/\/$/, "") || "/"}`;
+  } catch {
     return `${provider}:${url}`;
   }
 }
