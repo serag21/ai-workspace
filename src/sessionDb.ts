@@ -10,6 +10,34 @@ interface StoredTranscript {
   updatedAt: number;
 }
 
+const MAX_MESSAGES = 100;
+const MAX_MESSAGE_CHARS = 15000;
+const MAX_TRANSCRIPT_CHARS = 400000;
+
+function boundMessages(messages: SessionMessage[]): SessionMessage[] {
+  const recent = messages.slice(-MAX_MESSAGES);
+  const bounded: SessionMessage[] = [];
+  let totalChars = 0;
+
+  for (let index = recent.length - 1; index >= 0; index -= 1) {
+    const message = recent[index];
+    const remaining = MAX_TRANSCRIPT_CHARS - totalChars;
+    if (remaining <= 0) break;
+
+    const limit = Math.min(MAX_MESSAGE_CHARS, remaining);
+    const marker = " …[message truncated]";
+    const text = message.text.length <= limit
+      ? message.text
+      : limit > marker.length
+        ? message.text.slice(0, limit - marker.length) + marker
+        : message.text.slice(0, limit);
+    bounded.unshift({ ...message, text });
+    totalChars += text.length;
+  }
+
+  return bounded;
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -28,7 +56,7 @@ export async function saveSessionMessages(sessionId: string, messages: SessionMe
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, "readwrite");
-      transaction.objectStore(STORE_NAME).put({ sessionId, messages: messages.slice(-100), updatedAt: Date.now() } satisfies StoredTranscript);
+      transaction.objectStore(STORE_NAME).put({ sessionId, messages: boundMessages(messages), updatedAt: Date.now() } satisfies StoredTranscript);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error ?? new Error("Could not save transcript."));
       transaction.onabort = () => reject(transaction.error ?? new Error("Transcript save was aborted."));
