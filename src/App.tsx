@@ -366,14 +366,16 @@ export function App() {
         // the empty draft alias. Do not transfer its project to a history item
         // the user may have opened from the provider's own navigation.
         const next = sessionsRef.current.filter((session) => session.id !== draft.id);
-        const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "sessionRegistry"]);
+        const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "sessionRegistry", "sessionLabels"]);
         const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
         const pins = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
         const registry = (saved.sessionRegistry ?? {}) as Record<string, AISession>;
+        const labels = (saved.sessionLabels ?? {}) as Record<string, string>;
         delete assignments[draft.id];
         delete pins[draft.id];
         delete registry[draft.id];
-        await chrome.storage.local.set({ sessions: next, sessionAssignments: assignments, pinnedSessions: pins, sessionRegistry: registry });
+        delete labels[draft.id];
+        await chrome.storage.local.set({ sessions: next, sessionAssignments: assignments, pinnedSessions: pins, sessionRegistry: registry, sessionLabels: labels });
         setSessions(next);
         if (selectedSessionId === draft.id) setSelectedSessionId(actualId);
         scheduleRefresh();
@@ -401,11 +403,16 @@ export function App() {
         migrated,
         ...sessionsRef.current.filter((session) => session.id !== draft.id && session.id !== actualId),
       ];
-      const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "sessionRegistry"]);
+      const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "sessionRegistry", "sessionLabels"]);
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pins = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const registry = (saved.sessionRegistry ?? {}) as Record<string, AISession>;
+      const labels = (saved.sessionLabels ?? {}) as Record<string, string>;
       const projectId = assignments[draft.id] ?? draft.projectId ?? "inbox";
+      if (labels[draft.id]) {
+        labels[actualId] = labels[draft.id];
+        delete labels[draft.id];
+      }
       if (assignments[draft.id]) delete assignments[draft.id];
       assignments[actualId] = projectId;
       if (pins[draft.id] !== undefined) {
@@ -422,6 +429,7 @@ export function App() {
         sessionAssignments: assignments,
         pinnedSessions: pins,
         sessionRegistry: registry,
+        sessionLabels: labels,
       });
       setSessions(next);
       if (selectedSessionId === draft.id) setSelectedSessionId(actualId);
