@@ -54,3 +54,10 @@
 .project-actions button{width:21px;height:24px;display:grid;place-items:center;border:1px solid transparent;border-radius:6px;background:transparent;color:#747785;cursor:pointer;padding:0}
 .project-actions button:hover{color:#d6c9f7;background:#211d2d;border-color:#38304e}
 @media(max-width:500px){.project-item{flex:none;max-width:240px}.project-actions{opacity:1;pointer-events:auto}.project-item .project-row{white-space:nowrap}}
+
+.topbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex:none}
+.new-chat-provider{max-width:95px;border:1px solid #2b2d38;background:#14151b;color:#b0b3bf;border-radius:9px;padding:8px 6px;font-size:10px;outline:0}
+.new-chat-provider:focus{border-color:#463b65}
+.new-chat-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid #493d68;background:#29213e;color:#ded5f9;border-radius:9px;padding:8px 10px;font-size:10px;white-space:nowrap;cursor:pointer}
+.new-chat-button:hover{background:#332852}
+@media(max-width:500px){.topbar-actions{gap:4px}.new-chat-provider{max-width:83px;padding:7px 4px}.new-chat-button{padding:8px}.new-chat-button span{display:none}}
