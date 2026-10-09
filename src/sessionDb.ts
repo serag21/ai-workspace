@@ -84,3 +84,61 @@ export async function searchSessionIds(query: string): Promise<string[]> {
     db.close();
   }
 }
+
+
+/**
+ * Re-key a transcript when a provider replaces a temporary draft URL with its
+ * canonical conversation URL. Prefer the more complete/newer cached snapshot.
+ */
+export async function migrateSessionMessages(fromSessionId: string, toSessionId: string): Promise<void> {
+  if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) return;
+
+  const db = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const fromRequest = store.get(fromSessionId);
+      const toRequest = store.get(toSessionId);
+      let sourceReady = false;
+      let targetReady = false;
+      let applied = false;
+
+      const apply = () => {
+        if (!sourceReady || !targetReady || applied) return;
+        applied = true;
+
+        const source = fromRequest.result as StoredTranscript | undefined;
+        const target = toRequest.result as StoredTranscript | undefined;
+        if (!source) return;
+
+        const useSource = !target ||
+          source.messages.length > target.messages.length ||
+          (source.messages.length === target.messages.length && source.updatedAt > target.updatedAt);
+        const chosen = useSource ? source : target!;
+        store.put({
+          sessionId: toSessionId,
+          messages: chosen.messages.slice(-100),
+          updatedAt: Date.now(),
+        } satisfies StoredTranscript);
+        store.delete(fromSessionId);
+      };
+
+      fromRequest.onsuccess = () => {
+        sourceReady = true;
+        apply();
+      };
+      toRequest.onsuccess = () => {
+        targetReady = true;
+        apply();
+      };
+      fromRequest.onerror = () => reject(fromRequest.error ?? new Error("Could not read draft transcript."));
+      toRequest.onerror = () => reject(toRequest.error ?? new Error("Could not read destination transcript."));
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error ?? new Error("Could not migrate transcript."));
+      transaction.onabort = () => reject(transaction.error ?? new Error("Transcript migration was aborted."));
+    });
+  } finally {
+    db.close();
+  }
+}
