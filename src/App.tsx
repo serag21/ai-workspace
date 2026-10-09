@@ -508,22 +508,23 @@ export function App() {
       if (!selectedSessionId || !selectedSession) return;
 
       let fresh: SessionMessage[] = [];
+      let freshSnapshot: Awaited<ReturnType<typeof requestSessionSnapshot>> = null;
 
       if (selectedSession.lifecycle === "open" && selectedSession.tabId !== null) {
-        const snapshot = await requestSessionSnapshot(selectedSession.tabId);
-        fresh = snapshot?.messages ?? [];
+        freshSnapshot = await requestSessionSnapshot(selectedSession.tabId);
+        fresh = freshSnapshot?.messages ?? [];
       }
 
       if (fresh.length > 0) {
         await saveSessionMessages(selectedSession.id, fresh);
-        if (!cancelled) {
+        if (!cancelled && freshSnapshot) {
           setSessions((current) => current.map((session) => session.id === selectedSession.id ? {
             ...session,
-            title: fresh.length ? (session.title || selectedSession.title) : session.title,
-            status: selectedSession.lifecycle === "open" ? (session.status === "working" ? "working" : session.status) : session.status,
-            latestUser: fresh.filter((message) => message.role === "user").at(-1)?.text.slice(0, 500) ?? session.latestUser,
-            latestAssistant: fresh.filter((message) => message.role === "assistant").at(-1)?.text.slice(0, 800) ?? session.latestAssistant,
-            snapshotAt: Date.now(),
+            title: freshSnapshot!.title.trim() || session.title,
+            status: freshSnapshot!.status,
+            latestUser: freshSnapshot!.latestUser.slice(0, 500) || session.latestUser,
+            latestAssistant: freshSnapshot!.latestAssistant.slice(0, 800) || session.latestAssistant,
+            snapshotAt: freshSnapshot!.timestamp,
           } : session));
         }
       }
