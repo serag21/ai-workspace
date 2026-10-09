@@ -53,7 +53,7 @@ After pulling changes, run `npm run build` again and use **Reload** on the exten
 
 GitHub Actions runs TypeScript typechecking, a production build, and extension-bundle checks on every push to `main`. See [Actions](https://github.com/serag21/ai-workspace/actions).
 
-For a practical end-to-end test, use the [Extension Test Plan](docs/extension-test-plan.md). Keep the [Competitive Landscape](docs/competitive-landscape.md) as a standing requirement when making roadmap decisions.
+For a practical end-to-end test, use the [Extension Test Plan](docs/extension-test-plan.md). Keep the [Competitive Landscape](docs/competitive-landscape.md) as a standing requirement when making roadmap decisions. The proposed VS Code/local repository integration is documented in the [Local Development Bridge plan](docs/local-development-bridge.md); it is not yet implemented.
 
 ## Roadmap direction
 
