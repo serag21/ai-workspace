@@ -40,7 +40,7 @@ Use this for a release-candidate pass in a real Chrome profile. CI checks type/b
 - [ ] Select a session and confirm recent user/assistant turns load.
 - [ ] Search for a distinctive word in the title, latest preview, and a message further back in the cached transcript.
 - [ ] Confirm cached-message search returns the right session, and changing/clearing the search removes stale results.
-- [ ] Confirm sessions retain up to the latest 100 messages and that the UI makes the cached nature of the transcript apparent.
+- [ ] Confirm sessions retain up to the latest 100 captured messages, bounded to 400,000 characters per session; exceptionally long messages show a truncation marker.
 - [ ] Select related sessions and check the suggestions are genuinely relevant, not merely sharing generic words.
 - [ ] Check that updating a selected session's transcript does not trigger repeated full snapshots or a render loop.
 
@@ -73,7 +73,7 @@ Use this for a release-candidate pass in a real Chrome profile. CI checks type/b
 - [ ] Confirm a provider URL transition does not leave a duplicate closed draft alongside the actual conversation.
 - [ ] Close one completely blank new-chat draft; confirm this does not trigger a false “can't capture” warning.
 - [ ] In a project, use Close tabs and confirm it lists/progresses through the currently visible filtered set only.
-- [ ] During bulk close, verify conversation snapshots are saved before tabs are closed, and any conversation that cannot be captured and has no local cache is left open.
+- [ ] During bulk close, verify fresh conversation snapshots are saved before tabs are closed; any open conversation that cannot be freshly captured is left open even if it has an older cache.
 - [ ] Confirm bulk close never closes unrelated tabs, and completed transcript cache remains available in All work.
 
 ## 8. Reliability and performance
