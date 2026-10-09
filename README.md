@@ -12,10 +12,10 @@ The long-term direction is one session model for both web AI conversations and l
 - **Automatic discovery** of open ChatGPT, Claude, and Gemini tabs.
 - **Project organization** with Inbox-first onboarding, manual move/pin, review-before-moving project suggestions, and session nicknames such as “Mastermind” or “Thumbnail Studio.”
 - **Session lifecycle** for open, discarded, and closed tabs.
-- **Recent conversation context** in session cards and a selected-session transcript, cached locally (up to the latest 100 messages per session).
+- **Recent conversation context** in session cards and a selected-session transcript, cached locally (up to 100 recent messages and a 400,000-character transcript budget per session; exceptionally long messages are truncated locally).
 - **Create new chats from the workspace** with ChatGPT, Claude, or Gemini. New chats open in background tabs and use the user's existing signed-in provider session.
 - **Continue from the workspace** by sending a prompt to a selected provider session. If a cached session is closed, Workspace can reopen it in a background tab to continue.
-- **Close tabs in bulk** after attempting to capture a local transcript first. Tabs that cannot be safely captured are left open rather than risking lost context.
+- **Close tabs in bulk** after attempting a fresh local transcript capture first. Open tabs are left open if a fresh capture fails, even if an older cache exists, rather than risking loss of newer context.
 - **Local transcript search** over cached messages when the user searches, plus title and recent-message search.
 - **Related work** suggestions that surface other potentially relevant sessions.
 - **Performance safeguards**: no eager full snapshots of every session, throttled scans/publication, compact persisted previews, and no blind multi-attempt prompt retries.
