@@ -153,6 +153,29 @@ Recent user feedback for [Paseo on the App Store](https://apps.apple.com/us/app/
 **Revised verdict:** the broad “all AI work in one workspace, with agents” space is more crowded than we initially found. The concept is not obviously dead, but differentiation needs to narrow to web-account session continuity + cross-provider project context + exceptional low-resource/reliable local operation. We should validate that demand and compare ADDOM and Zod directly before investing heavily in native desktop or advanced agent orchestration.
 
 
+### Fourth-pass discoveries: memory products and a same-name product
+
+| Product | What its current public listing says | Consequence for us |
+|---|---|---|
+| [Mind Silo](https://chromewebstore.google.com/detail/mind-silo/gpclchllpaeajbjgmcfnckiehlephcpj) | Automatically captures ChatGPT, Claude and Gemini conversations into a connected memory graph; it also captures Claude Code and Cursor sessions and can incorporate GitHub. Current Chrome Web Store page showed 10 users and 2 ratings when inspected. | A cross-provider browser + coding-history memory graph already exists as an early product. Its published focus is searchable connected memory and in-context recall, not a full live session cockpit. User scale is very small, but feature overlap is meaningful. |
+| [LLMemory](https://chromewebstore.google.com/detail/llmemory-%E2%80%93-export-backup/gmiggnbolgkigpilpknofnfmicnbpjoc) | Automatically saves browser chats, supports one-click full-history backfill, full-text search, own-Drive/GitHub storage, CLI backup of Claude Code/Codex sessions, a web vault, and an MCP server for querying prior conversations. Current store listing showed 57 users and one rating. | This substantially covers cross-provider chat + local CLI history + agent recall as a *vault/archive*. Our possible remaining gap is direct live session control/attention/reopening, not cross-tool retention or search. |
+| [AI PRISM](https://chromewebstore.google.com/detail/ai-prism-beta/gapeipjkcldckehplnobkicnbclhmhkj) | Opt-in live saving and cross-session handoff across ChatGPT, Claude, Gemini, GitHub Copilot and Claude Code; library of saved pairs, bulk management, context transfer. Current store listing showed six users and no ratings. | Even “cross-session bridge” language and integration of browser AI and coding-agent results are already claimed by another early extension. Product maturity and reliable live control remain unverified. |
+| [AI Workspace](https://www.my-aiworkspace.com/privacy) (same-name product) | A separate extension plus locally installed workspace: save a conversation from the active tab into a local SQLite-backed workspace through localhost. The published policy explicitly says it reads only the active tab while the popup is open, does not run in the background and does not enumerate conversation history. | The name is already used in this category, so “AI Workspace” should remain a working title until a proper brand/trademark search. Functionally, the published capture workflow is narrower than continuous cross-tab session management, but the name itself creates discovery/confusion risk. |
+
+These products are small by their disclosed Chrome Web Store user counts, so they do not establish a saturated market of successful incumbents. They do establish that the product concepts are being explored by multiple makers and that no single individual feature we named should be treated as unique.
+
+### What the product concept now needs to prove
+
+An exact duplicate was not confirmed, but after this pass the overlap is enough that the product should not be justified by “we unify browser chats with coding sessions” alone. The differentiator to test is the combination of:
+
+- **Operational, not just archival:** current state and attention, one click to the specific session, safe continue/send, project-level view, bulk close/reopen and recent turns.
+- **Native website continuity:** manage the user's actual live provider conversations and keep their URLs/account/session identity, rather than only import/copy content to a separate chat or archive. Test competing products hands-on; some provide account-authenticated provider clients, so “existing account” alone is not enough.
+- **Mixed work taxonomy:** planning/mastermind, thumbnail generation, research, coding CLI, and eventually workflow runs live together with explicit roles and clear status.
+- **Conservative capture policy:** only the work needed to keep this view useful; no noisy full-library crawling; no blind retries; clear pause/refresh/error affordances.
+- **Local retention and restore:** useful cached context survives closing the tab. This should not be described as full account-history backup, unlimited transcript storage, or as a way to make the provider's original long conversation itself load faster.
+
+Before public launch, check the name *AI Workspace* in trademark/search/store domains and choose a more distinctive name if it creates real confusion. This is a naming-risk note, not legal advice.
+
 ### Third-pass correction: account connections are not the same as website session capture
 
 ADDOM's current public README now explicitly lists “API-key, supported account-authentication, and local-provider connections.” That means the phrase “uses existing accounts” is too vague to serve as a differentiator. Our potential distinction is narrower: **managing the existing conversations already open in the provider's website, capturing their recent rendered messages locally, keeping those sessions organized after browser tabs close, and continuing them using the same website login.** An authenticated provider connection inside a different chat client is similar in spirit but may or may not preserve the native website conversation history, limits, features, and context.
