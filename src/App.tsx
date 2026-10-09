@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, Pin, Pencil, Search, Trash2, X } from "lucide-react";
-import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot } from "./chrome";
-import { getProviderLabel } from "./providers";
+import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, MessageSquarePlus, Pin, Pencil, Search, Trash2, X } from "lucide-react";
+import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot, waitForTabComplete } from "./chrome";
+import { getProvider, getProviderLabel, getSessionId, isNewChatRoute } from "./providers";
 import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
 import { getSessionMessages, saveSessionMessages, searchSessionIds } from "./sessionDb";
 
@@ -183,6 +183,7 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(null);
   const [selectedProject, setSelectedProject] = useState("all");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [newChatProvider, setNewChatProvider] = useState<"chatgpt" | "claude" | "gemini">("chatgpt");
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -194,6 +195,9 @@ export function App() {
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<string, boolean>>({});
   const refreshTimer = useRef<number | null>(null);
   const refreshGeneration = useRef(0);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const reconcileDraftRouteRef = useRef<(tabId: number) => Promise<void>>(async () => {});
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
 
   async function refresh() {
