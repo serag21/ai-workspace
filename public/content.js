@@ -1,7 +1,7 @@
 (() => {
   if (window.top !== window) return;
 
-  const BRIDGE_VERSION = "2026-10-03-v3";
+  const BRIDGE_VERSION = "2026-10-09-v4";
   const previousBridge = window.__AI_WORKSPACE_PROVIDER_BRIDGE__;
   if (previousBridge?.version === BRIDGE_VERSION) return;
   previousBridge?.dispose?.();
