@@ -191,6 +191,13 @@
   }
 
   function publish(status, title, includeMessages = true) {
+    // A direct snapshot request supersedes any older debounced state so it
+    // cannot publish a stale Idle after a fresh Working snapshot.
+    if (publishTimer !== null) {
+      clearTimeout(publishTimer);
+      publishTimer = null;
+      pendingPublishKey = "";
+    }
     const snapshot = extractSnapshot(status, includeMessages);
     const latestUser = snapshot.latestUser.slice(0, 8000);
     const latestAssistant = snapshot.latestAssistant.slice(0, 12000);
