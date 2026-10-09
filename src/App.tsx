@@ -3,7 +3,7 @@ import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlu
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot } from "./chrome";
 import { getProviderLabel } from "./providers";
 import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
-import { getSessionMessages, searchSessionIds } from "./sessionDb";
+import { getSessionMessages, saveSessionMessages, searchSessionIds } from "./sessionDb";
 
 const seedProjects: Project[] = [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }];
 const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }> = {
@@ -187,6 +187,8 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [closingTabs, setClosingTabs] = useState(false);
+  const [closeProgress, setCloseProgress] = useState<string | null>(null);
   const [selectedMessages, setSelectedMessages] = useState<SessionMessage[]>([]);
   const [transcriptMatches, setTranscriptMatches] = useState<Set<string>>(new Set());
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<string, boolean>>({});
@@ -482,10 +484,92 @@ export function App() {
     scheduleRefresh();
   }
 
+  async function captureSessionBeforeClose(session: AISession): Promise<boolean> {
+    if (session.tabId === null) return true;
+
+    if (session.lifecycle === "open") {
+      let snapshot = await requestSessionSnapshot(session.tabId);
+      if (!snapshot?.messages.length) {
+        try {
+          await chrome.scripting.executeScript({ target: { tabId: session.tabId }, files: ["content.js"] });
+          await new Promise((resolve) => window.setTimeout(resolve, 180));
+          snapshot = await requestSessionSnapshot(session.tabId);
+        } catch {}
+      }
+
+      if (snapshot?.messages.length) {
+        await saveSessionMessages(session.id, snapshot.messages);
+        setSessions((current) => current.map((item) => item.id === session.id ? {
+          ...item,
+          title: snapshot!.title || item.title,
+          status: snapshot!.status,
+          latestUser: snapshot!.latestUser.slice(0, 500),
+          latestAssistant: snapshot!.latestAssistant.slice(0, 800),
+          snapshotAt: snapshot!.timestamp,
+        } : item));
+        if (selectedSessionId === session.id) setSelectedMessages(snapshot.messages);
+        return true;
+      }
+    }
+
+    // Closing a tab with no local transcript would strand the user. Leave it
+    // open when both a fresh capture and a cached transcript are unavailable.
+    const cached = await getSessionMessages(session.id);
+    return cached.length > 0;
+  }
+
   async function closeSession(session: AISession) {
     if (session.tabId === null) return;
-    await chrome.tabs.remove(session.tabId);
-    scheduleRefresh();
+    try {
+      const safeToClose = await captureSessionBeforeClose(session);
+      if (!safeToClose) {
+        window.alert("Workspace couldn't capture this conversation. The tab was left open so you don't lose access to it.");
+        return;
+      }
+      await chrome.tabs.remove(session.tabId);
+      scheduleRefresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not safely close this session.");
+    }
+  }
+
+  async function closeVisibleTabs() {
+    const targets = visible.filter((session) => session.tabId !== null && session.lifecycle !== "closed");
+    if (targets.length === 0 || closingTabs) return;
+    const confirmed = window.confirm(
+      "Capture recent messages where possible, then close " + targets.length +
+      " visible AI tabs? Their cached conversations will remain in Workspace. Tabs that cannot be captured will be left open.",
+    );
+    if (!confirmed) return;
+
+    setClosingTabs(true);
+    let closed = 0;
+    let skipped = 0;
+    try {
+      for (let index = 0; index < targets.length; index += 1) {
+        const session = targets[index];
+        setCloseProgress("Closing " + (index + 1) + " of " + targets.length);
+        try {
+          const safeToClose = await captureSessionBeforeClose(session);
+          if (!safeToClose) {
+            skipped += 1;
+            continue;
+          }
+          if (session.tabId !== null) await chrome.tabs.remove(session.tabId);
+          closed += 1;
+        } catch {
+          skipped += 1;
+        }
+      }
+    } finally {
+      setClosingTabs(false);
+      setCloseProgress(null);
+      scheduleRefresh();
+    }
+
+    if (skipped > 0) {
+      window.alert("Closed " + closed + " tab(s). Left " + skipped + " tab(s) open because they could not be safely captured or closed.");
+    }
   }
 
   async function sendPrompt(session: AISession) {
@@ -580,7 +664,12 @@ export function App() {
             <section className="session-column">
               <div className="sessions-header">
                 <div><h2>{selectedProject === "all" ? "All work" : projects.find((project) => project.id === selectedProject)?.name}</h2><span>{projectSessions.length} conversations</span></div>
-                <button className="refresh" onClick={() => void refresh()}>{loading ? "Scanning…" : "Rescan"}</button>
+                <div className="session-header-actions">
+                  {visible.some((session) => session.tabId !== null && session.lifecycle !== "closed") && (
+                    <button className="refresh" disabled={closingTabs} onClick={() => void closeVisibleTabs()}>{closeProgress || "Close tabs"}</button>
+                  )}
+                  <button className="refresh" onClick={() => void refresh()}>{loading ? "Scanning…" : "Rescan"}</button>
+                </div>
               </div>
               {scanError && <div className="scan-error" role="status">Could not refresh sessions: {scanError} <button onClick={() => void refresh()}>Retry</button></div>}
 
