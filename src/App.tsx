@@ -3,7 +3,7 @@ import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlu
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot } from "./chrome";
 import { getProviderLabel } from "./providers";
 import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
-import { getSessionMessages } from "./sessionDb";
+import { getSessionMessages, searchSessionIds } from "./sessionDb";
 
 const seedProjects: Project[] = [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }];
 const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }> = {
@@ -172,15 +172,17 @@ export function App() {
   const [query, setQuery] = useState("");
   const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(null);
-  const [selectedProject, setSelectedProject] = useState("inbox");
+  const [selectedProject, setSelectedProject] = useState("all");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedMessages, setSelectedMessages] = useState<SessionMessage[]>([]);
+  const [transcriptMatches, setTranscriptMatches] = useState<Set<string>>(new Set());
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<string, boolean>>({});
   const refreshTimer = useRef<number | null>(null);
   const refreshGeneration = useRef(0);
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
 
   async function refresh() {
     const generation = ++refreshGeneration.current;
@@ -243,6 +245,7 @@ export function App() {
 
       const merged = [...liveSessions, ...closedSessions];
       await chrome.storage.local.set({ sessions: merged, sessionMetadata: metadata });
+      if (saved.sessionStates) await chrome.storage.local.remove("sessionStates");
       setSessions((current) => sessionSignature(current) === sessionSignature(merged) ? current : merged);
     } finally {
       if (generation === refreshGeneration.current) setLoading(false);
@@ -255,21 +258,35 @@ export function App() {
   }
 
   useEffect(() => {
-    const onState = (message: { type?: string; sessionId?: string; status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number; messages?: SessionMessage[] }) => {
+    const onState = (message: { type?: string; sessionId?: string; status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }) => {
       if (message.type !== "ai-workspace:session-state" || !message.sessionId || !message.status) return;
-      setSessions((current) => current.map((session) => session.id === message.sessionId ? {
-        ...session,
-        status: message.status!,
-        title: message.title?.trim() || session.title,
-        latestUser: message.latestUser || session.latestUser,
-        latestAssistant: message.latestAssistant || session.latestAssistant,
-        snapshotAt: message.observedAt || session.snapshotAt,
-      } : session));
+
+      setSessions((current) => {
+        let changed = false;
+        const next = current.map((session) => {
+          if (session.id !== message.sessionId) return session;
+          const title = message.title?.trim() || session.title;
+          const latestUser = message.latestUser || session.latestUser;
+          const latestAssistant = message.latestAssistant || session.latestAssistant;
+          const snapshotAt = message.observedAt || session.snapshotAt;
+          if (session.status === message.status && session.title === title && session.latestUser === latestUser &&
+              session.latestAssistant === latestAssistant && session.snapshotAt === snapshotAt) return session;
+          changed = true;
+          return { ...session, status: message.status!, title, latestUser, latestAssistant, snapshotAt };
+        });
+        return changed ? next : current;
+      });
+
+      if (message.sessionId === selectedSessionId) {
+        void getSessionMessages(message.sessionId)
+          .then((messages) => setSelectedMessages(messages))
+          .catch(() => {});
+      }
     };
 
     chrome.runtime.onMessage.addListener(onState);
     return () => chrome.runtime.onMessage.removeListener(onState);
-  }, []);
+  }, [selectedSessionId]);
 
   useEffect(() => {
     void refresh();
@@ -294,43 +311,66 @@ export function App() {
 
     async function loadSelectedConversation() {
       setSelectedMessages([]);
-      if (!selectedSessionId) return;
-
-      const session = sessions.find((item) => item.id === selectedSessionId);
-      if (!session) return;
+      if (!selectedSessionId || !selectedSession) return;
 
       let fresh: SessionMessage[] = [];
 
-      if (session.lifecycle === "open" && session.tabId !== null) {
-        const snapshot = await requestSessionSnapshot(session.tabId);
+      if (selectedSession.lifecycle === "open" && selectedSession.tabId !== null) {
+        const snapshot = await requestSessionSnapshot(selectedSession.tabId);
         fresh = snapshot?.messages ?? [];
       }
 
-      const cached = await getSessionMessages(session.id);
-      const next = cached.length >= fresh.length ? cached : fresh;
+      const cached = await getSessionMessages(selectedSession.id);
+      const next = fresh.length > 0 ? fresh : cached;
 
       if (!cancelled) setSelectedMessages(next);
     }
 
-    void loadSelectedConversation();
+    void loadSelectedConversation().catch(() => {
+      if (!cancelled) setSelectedMessages([]);
+    });
     return () => { cancelled = true; };
-  }, [selectedSessionId, sessions]);
+  }, [selectedSessionId, selectedSession?.tabId, selectedSession?.lifecycle, selectedSession?.url]);
 
-  const projectSessions = sessions.filter((session) => session.projectId === selectedProject);
-  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  useEffect(() => {
+    const term = query.trim();
+    setTranscriptMatches(new Set());
+    if (term.length < 3) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void searchSessionIds(term)
+        .then((ids) => { if (!cancelled) setTranscriptMatches(new Set(ids)); })
+        .catch(() => { if (!cancelled) setTranscriptMatches(new Set()); });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  const projectSessions = selectedProject === "all"
+    ? sessions
+    : sessions.filter((session) => session.projectId === selectedProject);
   const visible = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     return projectSessions
       .filter((session) => viewFilter === "all" || session.lifecycle === viewFilter)
       .filter((session) => !statusFilter || session.status === statusFilter)
-      .filter((session) => !normalized || session.title.toLocaleLowerCase().includes(normalized) || getProviderLabel(session.provider).toLocaleLowerCase().includes(normalized))
+      .filter((session) => !normalized ||
+        session.title.toLocaleLowerCase().includes(normalized) ||
+        getProviderLabel(session.provider).toLocaleLowerCase().includes(normalized) ||
+        (session.latestUser ?? "").toLocaleLowerCase().includes(normalized) ||
+        (session.latestAssistant ?? "").toLocaleLowerCase().includes(normalized) ||
+        transcriptMatches.has(session.id))
       .sort((a, b) => Number(b.pinned) - Number(a.pinned) || statusRank[a.status] - statusRank[b.status] || lifecycleRank[a.lifecycle] - lifecycleRank[b.lifecycle] || a.title.localeCompare(b.title));
-  }, [projectSessions, query, statusFilter, viewFilter]);
+  }, [projectSessions, query, statusFilter, viewFilter, transcriptMatches]);
 
   const counts = {
-    working: projectSessions.filter((session) => session.status === "working" && session.lifecycle === "open").length,
-    needs: projectSessions.filter((session) => session.status === "needs-you").length,
-    done: projectSessions.filter((session) => session.status === "done").length,
+    working: sessions.filter((session) => session.status === "working" && session.lifecycle === "open").length,
+    needs: sessions.filter((session) => session.status === "needs-you").length,
+    done: sessions.filter((session) => session.status === "done").length,
   };
   const filterCounts = {
     all: projectSessions.length,
@@ -477,16 +517,20 @@ export function App() {
       <section className="attention">
         <div className="attention-header"><div><span className="section-kicker">Attention</span><p>See what needs you without opening every tab.</p></div><span className="live-dot" /></div>
         <div className="attention-grid">
-          <Stat icon={<CircleAlert size={16} />} label="Needs you" value={counts.needs} active={statusFilter === "needs-you"} onClick={() => { setStatusFilter(statusFilter === "needs-you" ? null : "needs-you"); setSelectedSessionId(null); }} />
-          <Stat icon={<Activity size={16} />} label="Working" value={counts.working} active={statusFilter === "working"} onClick={() => { setStatusFilter(statusFilter === "working" ? null : "working"); setSelectedSessionId(null); }} />
-          <Stat icon={<CheckCircle2 size={16} />} label="Done" value={counts.done} active={statusFilter === "done"} onClick={() => { setStatusFilter(statusFilter === "done" ? null : "done"); setSelectedSessionId(null); }} />
+          <Stat icon={<CircleAlert size={16} />} label="Needs you" value={counts.needs} active={statusFilter === "needs-you"} onClick={() => { setSelectedProject("all"); setStatusFilter(statusFilter === "needs-you" ? null : "needs-you"); setSelectedSessionId(null); }} />
+          <Stat icon={<Activity size={16} />} label="Working" value={counts.working} active={statusFilter === "working"} onClick={() => { setSelectedProject("all"); setStatusFilter(statusFilter === "working" ? null : "working"); setSelectedSessionId(null); }} />
+          <Stat icon={<CheckCircle2 size={16} />} label="Done" value={counts.done} active={statusFilter === "done"} onClick={() => { setSelectedProject("all"); setStatusFilter(statusFilter === "done" ? null : "done"); setSelectedSessionId(null); }} />
         </div>
       </section>
 
-      <div className="search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations" /></div>
+      <div className="search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles and cached messages" /></div>
 
       <div className="layout">
         <aside className="sidebar">
+          <div className="side-heading">Workspace</div>
+          <button className={"project-row " + (selectedProject === "all" ? "selected" : "")} onClick={() => { setSelectedProject("all"); setSelectedSessionId(null); }}>
+            <Activity size={16} /><span>All work</span><span className="count">{sessions.length}</span>
+          </button>
           <div className="side-heading">Projects</div>
           {projects.map((project) => (
             <button key={project.id} className={"project-row " + (selectedProject === project.id ? "selected" : "")} onClick={() => { setSelectedProject(project.id); setSelectedSessionId(null); }}>
@@ -499,7 +543,7 @@ export function App() {
           <div className={"workspace-grid " + (selectedSession ? "has-selection" : "")}>
             <section className="session-column">
               <div className="sessions-header">
-                <div><h2>{projects.find((project) => project.id === selectedProject)?.name}</h2><span>{projectSessions.length} conversations</span></div>
+                <div><h2>{selectedProject === "all" ? "All work" : projects.find((project) => project.id === selectedProject)?.name}</h2><span>{projectSessions.length} conversations</span></div>
                 <button className="refresh" onClick={() => void refresh()}>{loading ? "Scanning…" : "Rescan"}</button>
               </div>
 
@@ -568,6 +612,12 @@ export function App() {
                         <div className="session-main">
                           <div className="session-title">{session.title}</div>
                           <div className={"session-meta " + session.lifecycle}>{getProviderLabel(session.provider)} · {metaLabel}</div>
+                          {(session.status === "working" ? session.latestUser : session.latestAssistant || session.latestUser) && (
+                            <div className="session-preview">
+                              {(session.status === "working" ? session.latestUser : session.latestAssistant || session.latestUser || "")
+                                ?.replace(/\\s+/g, " ").slice(0, 150)}
+                            </div>
+                          )}
                         </div>
                         <div className="session-actions" onClick={(event) => event.stopPropagation()}>
                           <select className="move-select" aria-label="Move to project" value={session.projectId ?? "inbox"} onChange={(event) => void moveSession(session, event.target.value)}>
