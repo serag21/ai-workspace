@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, Pin, Search, X } from "lucide-react";
+import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, Pin, Pencil, Search, Trash2, X } from "lucide-react";
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot } from "./chrome";
 import { getProviderLabel } from "./providers";
 import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
@@ -429,6 +429,44 @@ export function App() {
     await chrome.storage.local.set({ projects: nextProjects });
   }
 
+  async function renameProject(project: Project) {
+    if (project.id === "inbox") return;
+    const value = window.prompt("Rename project", project.name);
+    const name = value?.trim();
+    if (!name || name === project.name) return;
+    if (projects.some((item) => item.id !== project.id && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      window.alert("A project with that name already exists.");
+      return;
+    }
+
+    const nextProjects = projects.map((item) => item.id === project.id ? { ...item, name } : item);
+    await chrome.storage.local.set({ projects: nextProjects });
+    setProjects(nextProjects);
+  }
+
+  async function deleteProject(project: Project) {
+    if (project.id === "inbox") return;
+    const moving = sessions.filter((session) => session.projectId === project.id);
+    const confirmed = window.confirm(
+      'Delete "' + project.name + '"? ' + moving.length +
+      " conversation(s) will move to Inbox. Their locally cached transcripts will be kept.",
+    );
+    if (!confirmed) return;
+
+    const saved = await chrome.storage.local.get("sessionAssignments");
+    const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
+    for (const session of moving) assignments[session.id] = "inbox";
+
+    const nextProjects = projects.filter((item) => item.id !== project.id);
+    await chrome.storage.local.set({ projects: nextProjects, sessionAssignments: assignments });
+    setProjects(nextProjects);
+    setSessions((current) => current.map((session) =>
+      session.projectId === project.id ? { ...session, projectId: "inbox" } : session,
+    ));
+    if (selectedProject === project.id) setSelectedProject("inbox");
+    if (moving.some((session) => session.id === selectedSessionId)) setSelectedSessionId(null);
+  }
+
   async function createSuggestedProject(suggestion: ProjectSuggestion) {
     const existingNames = new Set(projects.map((project) => project.name.toLocaleLowerCase()));
     let name = suggestion.name;
@@ -653,9 +691,19 @@ export function App() {
           </button>
           <div className="side-heading">Projects</div>
           {projects.map((project) => (
-            <button key={project.id} className={"project-row " + (selectedProject === project.id ? "selected" : "")} onClick={() => { setSelectedProject(project.id); setSelectedSessionId(null); }}>
-              {project.id === "inbox" ? <Inbox size={16} /> : <LayoutGrid size={16} />}<span>{project.name}</span><span className="count">{sessions.filter((session) => session.projectId === project.id).length}</span>
-            </button>
+            <div key={project.id} className={"project-item " + (selectedProject === project.id ? "selected" : "")}>
+              <button className={"project-row " + (selectedProject === project.id ? "selected" : "")} onClick={() => { setSelectedProject(project.id); setSelectedSessionId(null); }}>
+                {project.id === "inbox" ? <Inbox size={16} /> : <LayoutGrid size={16} />}
+                <span>{project.name}</span>
+                <span className="count">{sessions.filter((session) => session.projectId === project.id).length}</span>
+              </button>
+              {project.id !== "inbox" && (
+                <div className="project-actions">
+                  <button title={"Rename " + project.name} aria-label={"Rename " + project.name} onClick={() => void renameProject(project)}><Pencil size={12} /></button>
+                  <button title={"Delete " + project.name} aria-label={"Delete " + project.name} onClick={() => void deleteProject(project)}><Trash2 size={12} /></button>
+                </div>
+              )}
+            </div>
           ))}
         </aside>
 
