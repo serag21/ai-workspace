@@ -115,9 +115,12 @@
       const message = recent[index];
       const remaining = MAX_TRANSCRIPT_CHARS - totalChars;
       if (remaining <= 0) break;
+      const marker = " …[message truncated]";
       const text = message.text.length <= remaining
         ? message.text
-        : message.text.slice(0, Math.max(1, remaining - 24)) + " …[message truncated]";
+        : remaining > marker.length
+          ? message.text.slice(0, remaining - marker.length) + marker
+          : message.text.slice(0, remaining);
       bounded.unshift({ ...message, text });
       totalChars += text.length;
     }
