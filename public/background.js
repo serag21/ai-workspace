@@ -57,7 +57,7 @@ function normalizeMessages(messages) {
     normalized.push({
       id: String(message.id || (normalized.length + 1)),
       role: message.role,
-      text: text.slice(0, 30000),
+      text: text.slice(0, 15000),
       observedAt: Number(message.observedAt || Date.now()),
     });
   }
