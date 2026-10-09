@@ -514,6 +514,20 @@ export function App() {
         fresh = snapshot?.messages ?? [];
       }
 
+      if (fresh.length > 0) {
+        await saveSessionMessages(selectedSession.id, fresh);
+        if (!cancelled) {
+          setSessions((current) => current.map((session) => session.id === selectedSession.id ? {
+            ...session,
+            title: fresh.length ? (session.title || selectedSession.title) : session.title,
+            status: selectedSession.lifecycle === "open" ? (session.status === "working" ? "working" : session.status) : session.status,
+            latestUser: fresh.filter((message) => message.role === "user").at(-1)?.text.slice(0, 500) ?? session.latestUser,
+            latestAssistant: fresh.filter((message) => message.role === "assistant").at(-1)?.text.slice(0, 800) ?? session.latestAssistant,
+            snapshotAt: Date.now(),
+          } : session));
+        }
+      }
+
       const cached = await getSessionMessages(selectedSession.id);
       const next = fresh.length > 0 ? fresh : cached;
 
