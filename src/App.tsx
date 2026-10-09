@@ -856,7 +856,7 @@ export function App() {
             <option value="claude">Claude</option>
             <option value="gemini">Gemini</option>
           </select>
-          <button className="new-chat-button" onClick={() => void createNewChat()}><MessageSquarePlus size={15} /><span>New chat</span></button>
+          <button className="new-chat-button" title={"New " + getProviderLabel(newChatProvider) + " chat"} aria-label={"New " + getProviderLabel(newChatProvider) + " chat"} onClick={() => void createNewChat()}><MessageSquarePlus size={15} /><span>New chat</span></button>
           <button className="icon-button" title="Create project" aria-label="Create project" onClick={() => void createProject()}><FolderPlus size={18} /></button>
         </div>
       </header>
@@ -1047,15 +1047,17 @@ export function App() {
                       ))
                     ) : (
                       <div className="transcript-empty">
-                        <h4>No conversation snapshot yet</h4>
-                        <p>Workspace will capture the rendered conversation from the provider tab automatically. Open the provider once when a session has never been captured.</p>
-                        <button className="refresh" onClick={() => void openInChrome(selectedSession)}>Open in Chrome</button>
+                        <h4>{selectedSession.id.includes(":draft:") ? "New conversation ready" : "No cached messages yet"}</h4>
+                        <p>{selectedSession.id.includes(":draft:")
+                          ? "Start chatting below. Workspace will keep the recent conversation here; the provider tab stays in the background unless you open it."
+                          : "This session has no local transcript yet. Try opening the provider page once to capture its rendered conversation, then you can return here."}</p>
+                        {!selectedSession.id.includes(":draft:") && <button className="refresh" onClick={() => void openInChrome(selectedSession)}>Open in Chrome</button>}
                       </div>
                     )}
                   </div>
 
                   <div className="composer">
-                    <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={"Continue this " + getProviderLabel(selectedSession.provider) + " conversation…"} onKeyDown={(event) => {
+                    <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={(selectedSession.id.includes(":draft:") ? "Start a new " : "Message this ") + getProviderLabel(selectedSession.provider) + " conversation…"} onKeyDown={(event) => {
                       if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
                         event.preventDefault();
                         void sendPrompt(selectedSession);
