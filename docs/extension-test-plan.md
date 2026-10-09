@@ -58,6 +58,9 @@ Use this for a release-candidate pass in a real Chrome profile. CI checks type/b
 
 - [ ] Move sessions between Inbox and a project.
 - [ ] Pin and unpin sessions; confirm pin order persists after a refresh.
+- [ ] Rename two same-provider conversations to distinct nicknames such as “Mastermind” and “Thumbnail Studio”; confirm provider titles remain unchanged in the underlying browser tab.
+- [ ] Confirm session nicknames persist after closing/reopening tabs and Chrome restart, are searchable, and clear back to the provider title when the nickname is blanked.
+- [ ] Confirm related-work suggestions and session cards display the nickname consistently without changing the actual URL or session identity.
 - [ ] Create a project manually.
 - [ ] With multiple related Inbox chats, review suggested projects and verify nothing moves until Create & move is clicked.
 - [ ] Dismiss a suggestion and confirm it stays dismissed after refresh.
