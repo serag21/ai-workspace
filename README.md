@@ -10,7 +10,7 @@ The long-term direction is one session model for both web AI conversations and l
 
 - **All work view** across projects, with workspace-wide Needs you / Working / Done counts.
 - **Automatic discovery** of open ChatGPT, Claude, and Gemini tabs.
-- **Project organization** with Inbox-first onboarding, manual move/pin, and review-before-moving project suggestions.
+- **Project organization** with Inbox-first onboarding, manual move/pin, review-before-moving project suggestions, and session nicknames such as “Mastermind” or “Thumbnail Studio.”
 - **Session lifecycle** for open, discarded, and closed tabs.
 - **Recent conversation context** in session cards and a selected-session transcript, cached locally (up to the latest 100 messages per session).
 - **Create new chats from the workspace** with ChatGPT, Claude, or Gemini. New chats open in background tabs and use the user's existing signed-in provider session.
