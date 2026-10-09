@@ -456,7 +456,8 @@ export function App() {
 
   useEffect(() => {
     void refresh();
-    const onUpdated = (_tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+    const onUpdated = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (changeInfo.url !== undefined) void reconcileDraftRouteRef.current(tabId);
       if (changeInfo.url !== undefined || changeInfo.status !== undefined || changeInfo.title !== undefined || changeInfo.discarded !== undefined) scheduleRefresh();
     };
     const onCreated = () => scheduleRefresh();
@@ -471,6 +472,15 @@ export function App() {
       if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    for (const session of sessions) {
+      if (session.tabId !== null && session.id.startsWith(session.provider + ":draft:") &&
+          (session.latestUser?.trim() || session.status === "working" || session.status === "done" || session.status === "needs-you")) {
+        void reconcileDraftRouteRef.current(session.tabId);
+      }
+    }
+  }, [sessions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -788,7 +798,7 @@ export function App() {
           targetWindowId = (await chrome.tabs.get(targetTabId)).windowId;
         } catch {}
         setSessions((current) => current.map((item) => item.id === session.id
-          ? { ...item, status: "working", lifecycle: "open", tabId: targetTabId, windowId: targetWindowId }
+          ? { ...item, status: "working", lifecycle: "open", tabId: targetTabId, windowId: targetWindowId, latestUser: text.slice(0, 500) }
           : item));
         return;
       }
@@ -805,7 +815,15 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <div><div className="eyebrow">AI WORKSPACE</div><h1>Your AI work</h1></div>
-        <button className="icon-button" title="Create project" onClick={() => void createProject()}><FolderPlus size={18} /></button>
+        <div className="topbar-actions">
+          <select className="new-chat-provider" aria-label="New chat provider" value={newChatProvider} onChange={(event) => setNewChatProvider(event.target.value as "chatgpt" | "claude" | "gemini")}>
+            <option value="chatgpt">ChatGPT</option>
+            <option value="claude">Claude</option>
+            <option value="gemini">Gemini</option>
+          </select>
+          <button className="new-chat-button" onClick={() => void createNewChat()}><MessageSquarePlus size={15} /><span>New chat</span></button>
+          <button className="icon-button" title="Create project" aria-label="Create project" onClick={() => void createProject()}><FolderPlus size={18} /></button>
+        </div>
       </header>
 
       <section className="attention">
