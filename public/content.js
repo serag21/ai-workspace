@@ -19,6 +19,7 @@
   if (!provider) return;
 
   const MAX_MESSAGES = 100;
+  const WORKING_PUBLISH_INTERVAL_MS = 10000;
   let lastSignature = "";
   let lastWorking = false;
   let doneTimer = null;
@@ -83,9 +84,13 @@
       return position & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
     });
 
+    // Only extract text from a bounded recent window. Querying selectors still
+    // finds existing message nodes, but long histories no longer require reading
+    // every old message's innerText on each explicit snapshot.
+    const recentEntries = entries.slice(-MAX_MESSAGES * 4);
     const messages = [];
 
-    for (const entry of entries) {
+    for (const entry of recentEntries) {
       const text = textOf(entry.element);
       if (!text) continue;
       const previous = messages[messages.length - 1];
@@ -163,7 +168,7 @@
     const latestUser = snapshot.latestUser.slice(0, 8000);
     const latestAssistant = snapshot.latestAssistant.slice(0, 12000);
     const now = Date.now();
-    if (status === "working" && now - lastPublishAt < 2000) return;
+    if (status === "working" && now - lastPublishAt < WORKING_PUBLISH_INTERVAL_MS) return;
     const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant + "|" + (includeMessages ? snapshot.messages.length : "preview") + "|" + snapshot.lastRole;
     if (signature === lastSignature) return;
     lastSignature = signature;
