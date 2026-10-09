@@ -1,7 +1,7 @@
 (() => {
   if (window.top !== window) return;
 
-  const BRIDGE_VERSION = "2026-10-09-v4";
+  const BRIDGE_VERSION = "2026-10-09-v5";
   const previousBridge = window.__AI_WORKSPACE_PROVIDER_BRIDGE__;
   if (previousBridge?.version === BRIDGE_VERSION) return;
   previousBridge?.dispose?.();
@@ -21,6 +21,9 @@
   const MAX_MESSAGES = 100;
   const WORKING_PUBLISH_INTERVAL_MS = 10000;
   let lastSignature = "";
+  let lastPublishedStatus = "";
+  let lastPublishedTitle = "";
+  let pendingPublishKey = "";
   let lastWorking = false;
   let doneTimer = null;
   let publishTimer = null;
@@ -168,11 +171,14 @@
     const latestUser = snapshot.latestUser.slice(0, 8000);
     const latestAssistant = snapshot.latestAssistant.slice(0, 12000);
     const now = Date.now();
-    if (status === "working" && now - lastPublishAt < WORKING_PUBLISH_INTERVAL_MS) return;
+    if (status === "working" && lastPublishedStatus === "working" &&
+        now - lastPublishAt < WORKING_PUBLISH_INTERVAL_MS) return;
     const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant + "|" + (includeMessages ? snapshot.messages.length : "preview") + "|" + snapshot.lastRole;
     if (signature === lastSignature) return;
     lastSignature = signature;
     lastPublishAt = now;
+    lastPublishedStatus = status;
+    lastPublishedTitle = title;
 
     try {
       chrome.runtime.sendMessage({
@@ -191,11 +197,17 @@
   }
 
   function queuePublish(status, title, includeMessages = true) {
+    const key = status + "|" + title + "|" + includeMessages;
+    // A burst of DOM mutations must not continually push the same pending
+    // state transition farther into the future.
+    if (publishTimer && pendingPublishKey === key) return;
     if (publishTimer) clearTimeout(publishTimer);
+    pendingPublishKey = key;
     publishTimer = setTimeout(() => {
       publishTimer = null;
+      pendingPublishKey = "";
       publish(status, title, includeMessages);
-    }, 700);
+    }, 250);
   }
 
   function scheduleScan() {
@@ -215,8 +227,13 @@
         clearTimeout(doneTimer);
         doneTimer = null;
       }
+      const justStarted = !lastWorking;
       lastWorking = true;
-      queuePublish("working", title, false);
+      const heartbeatDue = lastPublishedStatus === "working" &&
+        Date.now() - lastPublishAt >= WORKING_PUBLISH_INTERVAL_MS;
+      // Publish immediately on a status transition, then at most once every
+      // 10 seconds while streaming. Intermediate mutation scans stay local.
+      if (justStarted || heartbeatDue) queuePublish("working", title, false);
       return;
     }
 
@@ -240,7 +257,8 @@
     const includeMessages = lastSignature === "";
     const snapshot = extractSnapshot(undefined, includeMessages);
     const nextStatus = snapshot.lastRole === "assistant" && findInput() ? "needs-you" : "idle";
-    queuePublish(nextStatus, title, includeMessages);
+    const shouldPublish = includeMessages || nextStatus !== lastPublishedStatus || title !== lastPublishedTitle;
+    if (shouldPublish) queuePublish(nextStatus, title, includeMessages);
   }
 
   function findInput() {
@@ -324,6 +342,7 @@
     observer.disconnect();
     if (doneTimer) clearTimeout(doneTimer);
     if (publishTimer) clearTimeout(publishTimer);
+    pendingPublishKey = "";
     if (scanTimer !== null) clearTimeout(scanTimer);
     if (intervalId !== null) clearInterval(intervalId);
   }
