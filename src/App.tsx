@@ -217,7 +217,7 @@ export function App() {
 
         const providerState = (saved.sessionRegistry ?? {})[session.id] as AISession | undefined;
         const cachedTitle = providerState?.title ?? previous?.title ?? metadata[session.id] ?? metadata[legacyId];
-        const isGenericTitle = /^(claude\\.ai|chatgpt(\\.com)?|gemini(\\.google\\.com)?|untitled conversation)$/i.test(session.title);
+        const isGenericTitle = /^(claude\.ai|chatgpt(\.com)?|gemini(\.google\.com)?|untitled conversation)$/i.test(session.title);
         const title = session.discarded && isGenericTitle && cachedTitle ? cachedTitle : session.title;
         const projectId = assignments[session.id] ?? assignments[legacyId] ?? previous?.projectId ?? "inbox";
         const isPinned = pinned[session.id] ?? pinned[legacyId] ?? previous?.pinned ?? false;
@@ -617,7 +617,7 @@ export function App() {
                           {(session.status === "working" ? session.latestUser : session.latestAssistant || session.latestUser) && (
                             <div className="session-preview">
                               {(session.status === "working" ? session.latestUser : session.latestAssistant || session.latestUser || "")
-                                ?.replace(/\\s+/g, " ").slice(0, 150)}
+                                ?.replace(/\s+/g, " ").slice(0, 150)}
                             </div>
                           )}
                         </div>
