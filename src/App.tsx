@@ -109,9 +109,14 @@ function normalizeStoredSession(session: AISession): AISession {
     lifecycle,
     discarded: lifecycle === "discarded",
     projectId: session.projectId ?? "inbox",
+    customTitle: session.customTitle?.trim().slice(0, 80) || undefined,
     latestUser: (session.latestUser ?? "").replace(/\s+/g, " ").slice(0, 500),
     latestAssistant: (session.latestAssistant ?? "").replace(/\s+/g, " ").slice(0, 800),
   };
+}
+
+function sessionDisplayTitle(session: AISession) {
+  return session.customTitle?.trim() || session.title || "Untitled conversation";
 }
 
 const RELATED_STOP_WORDS = new Set([
@@ -132,8 +137,8 @@ function meaningfulTokens(value: string) {
 }
 
 function relatedScore(source: AISession, candidate: AISession) {
-  const sourceTitle = meaningfulTokens(source.title);
-  const candidateTitle = meaningfulTokens(candidate.title);
+  const sourceTitle = meaningfulTokens(sessionDisplayTitle(source));
+  const candidateTitle = meaningfulTokens(sessionDisplayTitle(candidate));
   const sourceContext = meaningfulTokens([source.latestUser, source.latestAssistant].filter(Boolean).join(" "));
   const candidateContext = meaningfulTokens([candidate.latestUser, candidate.latestAssistant].filter(Boolean).join(" "));
 
@@ -169,7 +174,7 @@ function buildRelatedSessions(source: AISession | null, sessions: AISession[]) {
 
 function sessionSignature(sessions: AISession[]) {
   return JSON.stringify(sessions.map((session) => [
-    session.id, session.title, session.url, session.tabId, session.windowId, session.status,
+    session.id, session.title, session.customTitle, session.url, session.tabId, session.windowId, session.status,
     session.lifecycle, session.projectId, session.pinned, session.lastSeen, session.lastActivityAt,
     session.latestUser, session.latestAssistant, session.snapshotAt,
   ]));
@@ -206,17 +211,19 @@ export function App() {
     setScanError(null);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "dismissedSuggestions"]);
+      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "dismissedSuggestions", "sessionLabels"]);
       if (generation !== refreshGeneration.current) return;
 
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
       const savedDismissedSuggestions = (saved.dismissedSuggestions ?? {}) as Record<string, boolean>;
+      const labels = (saved.sessionLabels ?? {}) as Record<string, string>;
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
       const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map((session) => normalizeStoredSession({
         ...session,
+        customTitle: labels[session.id] ?? session.customTitle,
         projectId: assignments[session.id] ?? session.projectId ?? "inbox",
         pinned: Boolean(pinned[session.id] ?? pinned[session.provider + ":" + session.tabId] ?? session.pinned),
       }));
@@ -243,6 +250,7 @@ export function App() {
         return {
           ...session,
           title,
+          customTitle: labels[session.id] ?? labels[legacyId] ?? previous?.customTitle,
           status: previous?.status ?? session.status,
           latestUser: previous?.latestUser,
           latestAssistant: previous?.latestAssistant,
@@ -569,6 +577,7 @@ export function App() {
       .filter((session) => !statusFilter || session.status === statusFilter)
       .filter((session) => !normalized ||
         session.title.toLocaleLowerCase().includes(normalized) ||
+        (session.customTitle ?? "").toLocaleLowerCase().includes(normalized) ||
         getProviderLabel(session.provider).toLocaleLowerCase().includes(normalized) ||
         (session.latestUser ?? "").toLocaleLowerCase().includes(normalized) ||
         (session.latestAssistant ?? "").toLocaleLowerCase().includes(normalized) ||
@@ -596,6 +605,25 @@ export function App() {
     () => buildRelatedSessions(selectedSession, sessions),
     [selectedSession, sessions],
   );
+
+  async function renameSession(session: AISession) {
+    const value = window.prompt(
+      "Session nickname (leave blank to use the provider title)",
+      session.customTitle || session.title,
+    );
+    if (value === null) return;
+
+    const customTitle = value.trim().slice(0, 80);
+    const saved = await chrome.storage.local.get("sessionLabels");
+    const labels = (saved.sessionLabels ?? {}) as Record<string, string>;
+    if (customTitle) labels[session.id] = customTitle;
+    else delete labels[session.id];
+
+    await chrome.storage.local.set({ sessionLabels: labels });
+    setSessions((current) => current.map((item) =>
+      item.id === session.id ? { ...item, customTitle: customTitle || undefined } : item,
+    ));
+  }
 
   async function createProject() {
     const name = window.prompt("Project name");
@@ -973,7 +1001,7 @@ export function App() {
                       >
                         <div className={"provider-dot " + session.provider} />
                         <div className="session-main">
-                          <div className="session-title">{session.title}</div>
+                          <div className="session-title">{sessionDisplayTitle(session)}</div>
                           <div className={"session-meta " + session.lifecycle}>{getProviderLabel(session.provider)} · {metaLabel}</div>
                           {(session.status === "working" ? session.latestUser : session.latestAssistant || session.latestUser) && (
                             <div className="session-preview">
@@ -1005,10 +1033,11 @@ export function App() {
                     <button className="back-button" onClick={() => setSelectedSessionId(null)} title="Back to sessions"><ArrowLeft size={16} /></button>
                     <div className="detail-heading">
                       <span className={"provider-badge " + selectedSession.provider}>{getProviderLabel(selectedSession.provider)}</span>
-                      <h3>{selectedSession.title}</h3>
+                      <h3>{sessionDisplayTitle(selectedSession)}</h3>
                       <div className="detail-subline">{statusMeta[selectedSession.status].label} · {selectedSession.lifecycle}{selectedMessages.length ? " · conversation cached locally" : ""}</div>
                     </div>
                     <div className="detail-actions">
+                      <button className="session-rename" title="Rename session" aria-label="Rename session" onClick={() => void renameSession(selectedSession)}><Pencil size={13} /></button>
                       <button className="refresh" onClick={() => void openInChrome(selectedSession)}><ExternalLink size={13} /> Open in Chrome</button>
                       {selectedSession.lifecycle !== "closed" && selectedSession.tabId !== null && <button className="session-close" onClick={() => void closeSession(selectedSession)} title="Close browser tab"><X size={14} /></button>}
                     </div>
@@ -1027,7 +1056,7 @@ export function App() {
                           <button key={session.id} className="related-card" onClick={() => setSelectedSessionId(session.id)}>
                             <div className={"provider-dot " + session.provider} />
                             <div className="related-main">
-                              <strong>{session.title}</strong>
+                              <strong>{sessionDisplayTitle(session)}</strong>
                               <span>{getProviderLabel(session.provider)} · {reason}</span>
                             </div>
                             <span className="related-status">{statusMeta[session.status].label}</span>
