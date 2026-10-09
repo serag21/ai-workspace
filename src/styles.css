@@ -38,3 +38,7 @@
 .session-card{align-items:flex-start}
 .session-card .provider-dot{margin-top:4px}
 .session-main{padding-right:2px}
+
+.scan-error{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #57363c;background:#211619;color:#e6a4a4;border-radius:8px;padding:8px 10px;margin-bottom:9px;font-size:10px;line-height:1.4}
+.scan-error button{flex:none;border:1px solid #674047;background:#2e1e22;color:#f0c1c1;border-radius:6px;padding:4px 7px;font-size:9px;cursor:pointer}
+.scan-error button:hover{background:#3c242a}
