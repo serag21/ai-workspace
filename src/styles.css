@@ -61,3 +61,6 @@
 .new-chat-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid #493d68;background:#29213e;color:#ded5f9;border-radius:9px;padding:8px 10px;font-size:10px;white-space:nowrap;cursor:pointer}
 .new-chat-button:hover{background:#332852}
 @media(max-width:500px){.topbar-actions{gap:4px}.new-chat-provider{max-width:83px;padding:7px 4px}.new-chat-button{padding:8px}.new-chat-button span{display:none}}
+
+.session-rename{width:29px;height:29px;display:grid;place-items:center;border:1px solid #262832;background:#15161b;color:#777a87;border-radius:8px;cursor:pointer;flex:none}
+.session-rename:hover{color:#d6c9f7;background:#211d2d;border-color:#38304e}
