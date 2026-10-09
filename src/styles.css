@@ -46,3 +46,11 @@
 .session-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:none}
 .session-header-actions .refresh:disabled{opacity:.5;cursor:wait}
 @media(max-width:500px){.session-header-actions{flex-wrap:wrap}.sessions-header{gap:8px}}
+
+.project-item{display:flex;align-items:center;gap:1px;min-width:0;border-radius:9px}
+.project-item .project-row{flex:1;width:auto;min-width:0}
+.project-actions{display:flex;align-items:center;gap:1px;opacity:0;pointer-events:none;flex:none;transition:opacity .12s ease}
+.project-item:hover .project-actions,.project-item.selected .project-actions{opacity:1;pointer-events:auto}
+.project-actions button{width:21px;height:24px;display:grid;place-items:center;border:1px solid transparent;border-radius:6px;background:transparent;color:#747785;cursor:pointer;padding:0}
+.project-actions button:hover{color:#d6c9f7;background:#211d2d;border-color:#38304e}
+@media(max-width:500px){.project-item{flex:none;max-width:240px}.project-actions{opacity:1;pointer-events:auto}.project-item .project-row{white-space:nowrap}}
