@@ -105,3 +105,46 @@ Recommended sequence:
 Sweep performed 2026-10-09 across Chrome Web Store results, product pages, GitHub projects, documentation and web searches for cross-provider AI conversation managers, session managers, local-first AI clients, coding-agent control planes, and combined browser/CLI workspaces. Search results can miss private products, newly launched products, projects with little indexing, products renamed after publication, and private beta tools.
 
 **Bottom line:** adjacent competition is crowded. No exact all-in-one match was confirmed in this sweep, but uniqueness is not proven. The product decision should rest on the coherent web-chat + local-agent workflow and measured reliability—not the absence of a named competitor.
+
+
+## Addendum — second-pass search (2026-10-09)
+
+The expanded search found several materially closer products than the initial sweep. They make the category more crowded than the original verdict suggested.
+
+### Newly identified near-overlaps
+
+| Product | New evidence | Consequence for our plan |
+|---|---|---|
+| [ADDOM](https://www.addom.app/) | Open-source MIT desktop alpha. Its site explicitly combines multi-provider chat, per-thread providers/models, local projects/threads, editor, terminals, guarded command/file tools, review surfaces, project memory, agent roles and delegation. It positions itself around work, not isolated prompt sessions. | This is the closest newly identified broad competitor to our proposed eventual desktop workspace. We must not claim project + multi-provider + local agent orchestration is novel. We need to test specifically whether ADDOM connects to signed-in *browser conversations* on free/subscription tiers and whether it has browser session capture. The homepage instead emphasizes configured provider paths/credentials, so this remains a possible integration-model distinction, not a confirmed moat. |
+| [Zod Agent](https://www.zodagent.com/) | Same workspace ships as web app, Chrome extension and desktop app; sessions/memory/tools/provider keys in browser-local storage; OpenAI-compatible API providers; browser/desktop tools, MCP over HTTP, agent workflows and scheduled background agents. | The extension/web/desktop strategy itself is not unique. Unlike our intended existing-account workflow, Zod's documentation asks users to configure API keys and OpenAI-compatible providers. Our “use ChatGPT/Claude/Gemini website subscriptions without API keys” path is a key product requirement to test with real users. |
+| [Otto](https://otto-code.me/) | Local/cloud desktop + web agent workspace for Claude, Codex, OpenCode and compatible APIs, with agent status visualization, subagents, permission modes, browser verification, schedules, team roles and project-scoped agents. | Coding-agent dashboards and deep agent orchestration are already an active, fast-moving segment; avoid leading with these alone. |
+| [Paseo](https://github.com/getpaseo/paseo) | Self-hosted daemon; desktop/mobile/web/CLI clients; parallel coding agents, worktrees, integrated terminal/editor/diffs/PRs, voice, plugin-based providers and remote access. | Multi-surface local-agent control is already covered. This validates desktop as a possible second surface but weakens “one UI for many coding CLIs” as a differentiator. |
+| [Agent Session Manager Desktop](https://github.com/izll/agent-session-manager-desktop) | Persistent terminal sessions for Claude, Codex, Gemini, Aider and other CLIs; status and “needs attention” indicator; session restoration across app restarts. | Persistence, live agent status and attention alerts are expected/competitive in the CLI-agent segment. |
+| [Convo](https://chromewebstore.google.com/detail/convo/fjoelfmfmipkodaeemdpocdkigdgpphk) | Chrome extension sidebar for ChatGPT, Gemini, Claude, Grok and DeepSeek with context transfer, tasks, notes and scheduling. | A browser-first AI sidebar and cross-AI context transfer are already offered by another extension. |
+
+### What is still potentially distinctive after this search
+
+The distinction is narrower and more concrete now:
+
+- **Website-account integration:** use the actual logged-in ChatGPT, Claude and Gemini websites rather than requiring API keys, a paid external gateway, or a new model client. This matters for users on free tiers, consumer subscriptions, or web-only features—but depends on reliable, policy-compliant DOM integration.
+- **Browser-chat retention and control:** help a user close many provider tabs while retaining recently captured local context, re-open a cached session, and continue using that provider's existing browser identity. A new conversation archive alone is not sufficient; this must work reliably and safely.
+- **Cross-kind project grouping:** one project may contain ordinary web conversations (including specialized chats kept separate to conserve context/usage), alongside local CLI agent processes when those integrations are added. Current identified products often focus either on provider-account conversation libraries or coding-agent execution. This is a hypothesis, not a confirmed white space.
+- **A deliberately lighter, privacy-transparent, low-resource extension:** first capture only active/recent messages, cache locally, and do no aggressive background indexing. Echoes reviews give evidence that performance and sync reliability matter, while competitors also advertise local-first operation—so we need actual measured performance and simple UX, not just privacy claims.
+- **Workflow ergonomics for non-developer AI work:** not only terminal agents but specialized “mastermind/planning,” thumbnails, research, creative work, automation and provider-specific threads organized in one project. This may better reflect the user's real behavior than building a code-oriented IDE.
+
+### Direct challenge to our thesis
+
+ADDOM is close enough that we should download/inspect it before committing to a desktop roadmap. Compare its actual alpha against the user's target workflow:
+1. Can it use existing signed-in provider website sessions without API keys?
+2. Can it list and search current web chats, including chats created in the provider website?
+3. Can it preserve local context when the source browser tab closes?
+4. Can it group web chats and live local-agent runs together in a reviewable state/attention view?
+5. Does it support non-coding workflows and low-friction extension onboarding?
+
+If the answers are yes to most of these, the desktop roadmap should likely pivot toward a more specific browser retention/session product or reconsider whether to continue. If the gap is mainly the website-account integration model and close/reopen workflow, that is the path to prototype and validate—not a guaranteed moat.
+
+### Additional competitor evidence for reliability
+
+Recent user feedback for [Paseo on the App Store](https://apps.apple.com/us/app/paseo-remote-coding-agents/id6758887924?platform=ipad&see-all=reviews) praises multi-agent remote direction and smoothness, but an August review complained that backgrounding the app returned to Home and projects/active sessions disappeared. This is a useful reminder: reliably restoring the last project/session and retaining workspace state across restarts is a must-have. Review counts and excerpts are directional, not representative user research.
+
+**Revised verdict:** the broad “all AI work in one workspace, with agents” space is more crowded than we initially found. The concept is not obviously dead, but differentiation needs to narrow to web-account session continuity + cross-provider project context + exceptional low-resource/reliable local operation. We should validate that demand and compare ADDOM and Zod directly before investing heavily in native desktop or advanced agent orchestration.
