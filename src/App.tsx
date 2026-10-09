@@ -274,6 +274,138 @@ export function App() {
     refreshTimer.current = window.setTimeout(() => { void refresh(); }, 250);
   }
 
+  async function createNewChat() {
+    const urls = {
+      chatgpt: "https://chatgpt.com/",
+      claude: "https://claude.ai/new",
+      gemini: "https://gemini.google.com/app",
+    } as const;
+    const provider = newChatProvider;
+    const projectId = selectedProject === "all" ? "inbox" : selectedProject;
+
+    setScanError(null);
+    try {
+      const tab = await chrome.tabs.create({ url: urls[provider], active: false });
+      if (tab.id === undefined) throw new Error("Chrome did not return a tab ID.");
+      await waitForTabComplete(tab.id);
+
+      const loadedTab = await chrome.tabs.get(tab.id);
+      const loadedUrl = loadedTab.url || urls[provider];
+      const detectedProvider = getProvider(loadedUrl) ?? provider;
+      const id = getSessionId(detectedProvider, loadedUrl, tab.id);
+
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+      } catch {}
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+
+      const session: AISession = {
+        id,
+        provider: detectedProvider,
+        title: loadedTab.title?.trim() || "New " + getProviderLabel(detectedProvider) + " chat",
+        url: loadedUrl,
+        tabId: tab.id,
+        windowId: loadedTab.windowId,
+        status: "idle",
+        lifecycle: loadedTab.discarded ? "discarded" : "open",
+        discarded: Boolean(loadedTab.discarded),
+        lastSeen: Date.now(),
+        projectId,
+        pinned: false,
+      };
+
+      const next = [session, ...sessionsRef.current.filter((item) => item.id !== id && item.tabId !== tab.id)];
+      const saved = await chrome.storage.local.get(["sessionAssignments", "sessionRegistry"]);
+      const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
+      assignments[id] = projectId;
+      const registry = (saved.sessionRegistry ?? {}) as Record<string, AISession>;
+      registry[id] = { ...registry[id], ...session };
+      await chrome.storage.local.set({ sessions: next, sessionAssignments: assignments, sessionRegistry: registry });
+
+      setSessions(next);
+      setSelectedProject(projectId);
+      setSelectedSessionId(id);
+      setQuery("");
+      setStatusFilter(null);
+      setViewFilter("all");
+      setComposer("");
+      scheduleRefresh();
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : "Could not start a new provider conversation.");
+    }
+  }
+
+  async function reconcileDraftRoute(tabId: number) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab.url) return;
+      const provider = getProvider(tab.url);
+      if (!provider || isNewChatRoute(provider, tab.url)) return;
+
+      const draftIdPrefix = provider + ":draft:";
+      const draft = sessionsRef.current.find((session) =>
+        session.tabId === tabId && session.provider === provider && session.id.startsWith(draftIdPrefix),
+      );
+      if (!draft) return;
+
+      const hasStartedWork = Boolean(draft.latestUser?.trim()) ||
+        draft.status === "working" || draft.status === "done" || draft.status === "needs-you";
+      if (!hasStartedWork) return;
+
+      const actualId = getSessionId(provider, tab.url, tabId);
+      if (actualId === draft.id) return;
+      const existing = sessionsRef.current.find((session) => session.id === actualId);
+      const migrated: AISession = {
+        ...existing,
+        ...draft,
+        id: actualId,
+        url: tab.url,
+        title: tab.title?.trim() || draft.title,
+        tabId,
+        windowId: tab.windowId,
+        lifecycle: "open",
+        discarded: false,
+        latestUser: draft.latestUser || existing?.latestUser,
+        latestAssistant: existing?.latestAssistant || draft.latestAssistant,
+        projectId: draft.projectId || existing?.projectId || "inbox",
+        pinned: draft.pinned || Boolean(existing?.pinned),
+      };
+
+      const next = [
+        migrated,
+        ...sessionsRef.current.filter((session) => session.id !== draft.id && session.id !== actualId),
+      ];
+      const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "sessionRegistry"]);
+      const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
+      const pins = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
+      const registry = (saved.sessionRegistry ?? {}) as Record<string, AISession>;
+      const projectId = assignments[draft.id] ?? draft.projectId ?? "inbox";
+      if (assignments[draft.id]) delete assignments[draft.id];
+      assignments[actualId] = projectId;
+      if (pins[draft.id] !== undefined) {
+        pins[actualId] = pins[draft.id];
+        delete pins[draft.id];
+      } else if (draft.pinned) {
+        pins[actualId] = true;
+      }
+      delete registry[draft.id];
+      registry[actualId] = { ...registry[actualId], ...migrated, projectId, pinned: Boolean(pins[actualId]) };
+
+      await chrome.storage.local.set({
+        sessions: next,
+        sessionAssignments: assignments,
+        pinnedSessions: pins,
+        sessionRegistry: registry,
+      });
+      setSessions(next);
+      if (selectedSessionId === draft.id) setSelectedSessionId(actualId);
+    } catch {
+      // The provider may still be redirecting. Later URL/status events retry safely.
+    }
+  }
+
+  reconcileDraftRouteRef.current = reconcileDraftRoute;
+
   useEffect(() => {
     const onState = (message: { type?: string; sessionId?: string; status?: SessionStatus; title?: string; latestUser?: string; latestAssistant?: string; observedAt?: number }) => {
       if (message.type !== "ai-workspace:session-state" || !message.sessionId || !message.status) return;
