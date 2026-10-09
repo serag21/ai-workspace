@@ -102,7 +102,16 @@ function buildProjectSuggestions(sessions: AISession[], dismissed: Record<string
 
 function normalizeStoredSession(session: AISession): AISession {
   const lifecycle = session.lifecycle ?? (session.tabId === null ? "closed" : session.discarded ? "discarded" : "open");
-  return { ...session, tabId: session.tabId ?? null, windowId: session.windowId ?? null, lifecycle, discarded: lifecycle === "discarded", projectId: session.projectId ?? "inbox" };
+  return {
+    ...session,
+    tabId: session.tabId ?? null,
+    windowId: session.windowId ?? null,
+    lifecycle,
+    discarded: lifecycle === "discarded",
+    projectId: session.projectId ?? "inbox",
+    latestUser: (session.latestUser ?? "").replace(/\s+/g, " ").slice(0, 500),
+    latestAssistant: (session.latestAssistant ?? "").replace(/\s+/g, " ").slice(0, 800),
+  };
 }
 
 const RELATED_STOP_WORDS = new Set([
@@ -191,7 +200,7 @@ export function App() {
     setScanError(null);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata"]);
+      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "dismissedSuggestions"]);
       if (generation !== refreshGeneration.current) return;
 
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
@@ -202,8 +211,8 @@ export function App() {
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
       const registrySessions = Object.values((saved.sessionRegistry ?? {}) as Record<string, AISession>).map((session) => normalizeStoredSession({
         ...session,
-        projectId: session.projectId ?? assignments[session.id] ?? "inbox",
-        pinned: session.pinned ?? Boolean(pinned[session.id]),
+        projectId: assignments[session.id] ?? session.projectId ?? "inbox",
+        pinned: Boolean(pinned[session.id] ?? pinned[session.provider + ":" + session.tabId] ?? session.pinned),
       }));
       const storedById = new Map<string, AISession>();
       for (const session of [...storedSessions, ...registrySessions]) storedById.set(session.id, session);
@@ -291,9 +300,20 @@ export function App() {
   }, [selectedSessionId]);
 
   useEffect(() => {
-    // Remove the pre-optimization duplicate state cache. Session status and
-    // compact previews now live once in sessionRegistry; full messages live in IndexedDB.
-    void chrome.storage.local.remove("sessionStates").catch(() => {});
+    // One-time migration from the pre-compact storage format. Keep previews
+    // bounded and remove the duplicate state blob; full messages stay in IndexedDB.
+    void (async () => {
+      const saved = await chrome.storage.local.get(["storageSchemaVersion", "sessionRegistry"]);
+      if (Number(saved.storageSchemaVersion ?? 0) < 2) {
+        const registry = (saved.sessionRegistry ?? {}) as Record<string, AISession>;
+        for (const session of Object.values(registry)) {
+          session.latestUser = (session.latestUser ?? "").replace(/\s+/g, " ").slice(0, 500);
+          session.latestAssistant = (session.latestAssistant ?? "").replace(/\s+/g, " ").slice(0, 800);
+        }
+        await chrome.storage.local.set({ sessionRegistry: registry, storageSchemaVersion: 2 });
+      }
+      await chrome.storage.local.remove("sessionStates");
+    })().catch(() => {});
   }, []);
 
   useEffect(() => {
