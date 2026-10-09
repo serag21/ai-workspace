@@ -19,6 +19,8 @@
   if (!provider) return;
 
   const MAX_MESSAGES = 100;
+  const MAX_MESSAGE_CHARS = 15000;
+  const MAX_TRANSCRIPT_CHARS = 400000;
   const WORKING_PUBLISH_INTERVAL_MS = 10000;
   let lastSignature = "";
   let lastPublishedStatus = "";
@@ -42,7 +44,9 @@
   }
 
   function textOf(element) {
-    return (element?.innerText || element?.textContent || "").replace(/\s+/g, " ").trim();
+    const text = (element?.innerText || element?.textContent || "").replace(/\s+/g, " ").trim();
+    if (text.length <= MAX_MESSAGE_CHARS) return text;
+    return text.slice(0, MAX_MESSAGE_CHARS - 24) + " …[message truncated]";
   }
 
   const configs = {
@@ -101,7 +105,24 @@
       messages.push({ id: provider + "-msg-" + messages.length, role: entry.role, text, observedAt: Date.now() });
     }
 
-    return messages.slice(-MAX_MESSAGES);
+    const recent = messages.slice(-MAX_MESSAGES);
+    const bounded = [];
+    let totalChars = 0;
+
+    // Bound transcript payloads before they leave the provider page. Prefer
+    // the newest messages and never publish more than 400k characters/session.
+    for (let index = recent.length - 1; index >= 0; index -= 1) {
+      const message = recent[index];
+      const remaining = MAX_TRANSCRIPT_CHARS - totalChars;
+      if (remaining <= 0) break;
+      const text = message.text.length <= remaining
+        ? message.text
+        : message.text.slice(0, Math.max(1, remaining - 24)) + " …[message truncated]";
+      bounded.unshift({ ...message, text });
+      totalChars += text.length;
+    }
+
+    return bounded;
   }
 
   function latestMessageElement(selectors) {
