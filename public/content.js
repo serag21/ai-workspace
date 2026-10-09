@@ -96,16 +96,54 @@
     return messages.slice(-MAX_MESSAGES);
   }
 
-  function extractSnapshot(statusOverride) {
-    const messages = collectMessages();
-    const users = messages.filter((message) => message.role === "user");
-    const assistants = messages.filter((message) => message.role === "assistant");
+  function latestMessageElement(selectors) {
+    const candidates = new Set();
+    for (const selector of selectors) {
+      for (const element of Array.from(document.querySelectorAll(selector))) candidates.add(element);
+    }
+
+    let latest = null;
+    for (const element of candidates) {
+      if (!latest || (latest.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING)) latest = element;
+    }
+    return latest;
+  }
+
+  function extractSnapshot(statusOverride, includeMessages = true) {
+    const messages = includeMessages ? collectMessages() : [];
+    let latestUser = "";
+    let latestAssistant = "";
+    let lastRole = null;
+
+    if (includeMessages) {
+      const users = messages.filter((message) => message.role === "user");
+      const assistants = messages.filter((message) => message.role === "assistant");
+      latestUser = users[users.length - 1]?.text || "";
+      latestAssistant = assistants[assistants.length - 1]?.text || "";
+      lastRole = messages[messages.length - 1]?.role || null;
+    } else {
+      const userElement = latestMessageElement(configs[provider].user);
+      const assistantElement = latestMessageElement(configs[provider].assistant);
+      latestUser = textOf(userElement);
+      latestAssistant = textOf(assistantElement);
+
+      if (userElement && assistantElement) {
+        lastRole = (userElement.compareDocumentPosition(assistantElement) & Node.DOCUMENT_POSITION_FOLLOWING)
+          ? "assistant"
+          : "user";
+      } else if (assistantElement) {
+        lastRole = "assistant";
+      } else if (userElement) {
+        lastRole = "user";
+      }
+    }
+
     return {
       title: pageTitle(),
       status: statusOverride || (lastWorking ? "working" : "idle"),
-      latestUser: users[users.length - 1]?.text || "",
-      latestAssistant: assistants[assistants.length - 1]?.text || "",
-      lastRole: messages[messages.length - 1]?.role || null,
+      latestUser,
+      latestAssistant,
+      lastRole,
       messages,
       timestamp: Date.now(),
     };
@@ -120,13 +158,13 @@
     return Array.from(document.querySelectorAll("button[aria-label],button[title],[role='button'][aria-label],[role='button'][title]")).some(isStopControl);
   }
 
-  function publish(status, title) {
-    const snapshot = extractSnapshot(status);
+  function publish(status, title, includeMessages = true) {
+    const snapshot = extractSnapshot(status, includeMessages);
     const latestUser = snapshot.latestUser.slice(0, 8000);
     const latestAssistant = snapshot.latestAssistant.slice(0, 12000);
     const now = Date.now();
     if (status === "working" && now - lastPublishAt < 2000) return;
-    const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant + "|" + snapshot.messages.length + "|" + snapshot.lastRole;
+    const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant + "|" + (includeMessages ? snapshot.messages.length : "preview") + "|" + snapshot.lastRole;
     if (signature === lastSignature) return;
     lastSignature = signature;
     lastPublishAt = now;
@@ -141,17 +179,17 @@
         status,
         latestUser,
         latestAssistant,
-        messages: snapshot.messages,
+        messages: includeMessages ? snapshot.messages : undefined,
         timestamp: snapshot.timestamp,
       });
     } catch {}
   }
 
-  function queuePublish(status, title) {
+  function queuePublish(status, title, includeMessages = true) {
     if (publishTimer) clearTimeout(publishTimer);
     publishTimer = setTimeout(() => {
       publishTimer = null;
-      publish(status, title);
+      publish(status, title, includeMessages);
     }, 700);
   }
 
@@ -173,23 +211,31 @@
         doneTimer = null;
       }
       lastWorking = true;
-      queuePublish("working", title);
+      queuePublish("working", title, false);
       return;
     }
 
     if (lastWorking) {
       lastWorking = false;
-      queuePublish("done", title);
+      queuePublish("done", title, true);
       if (doneTimer) clearTimeout(doneTimer);
       doneTimer = setTimeout(() => {
-        const next = extractSnapshot();
+        doneTimer = null;
+        const next = extractSnapshot(undefined, false);
         const nextStatus = next.lastRole === "assistant" && findInput() ? "needs-you" : "idle";
-        queuePublish(nextStatus, pageTitle());
+        queuePublish(nextStatus, pageTitle(), false);
       }, 15000);
       return;
     }
 
-    queuePublish("idle", title);
+    // Keep the just-finished state visible for its settling window rather than
+    // reverting to Idle on the next periodic scan.
+    if (doneTimer) return;
+
+    const includeMessages = lastSignature === "";
+    const snapshot = extractSnapshot(undefined, includeMessages);
+    const nextStatus = snapshot.lastRole === "assistant" && findInput() ? "needs-you" : "idle";
+    queuePublish(nextStatus, title, includeMessages);
   }
 
   function findInput() {
@@ -247,8 +293,12 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "ai-workspace:request-snapshot") {
-      const state = extractSnapshot(isWorking() ? "working" : "idle");
-      publish(state.status, state.title);
+      const working = isWorking();
+      const state = extractSnapshot(working ? "working" : doneTimer ? "done" : undefined);
+      if (!working && !doneTimer) {
+        state.status = state.lastRole === "assistant" && findInput() ? "needs-you" : "idle";
+      }
+      publish(state.status, state.title, true);
       sendResponse({ ok: true, state });
       return true;
     }
