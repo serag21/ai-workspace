@@ -763,14 +763,17 @@ export function App() {
         if (selectedSessionId === session.id) setSelectedMessages(snapshot.messages);
         return true;
       }
+
+      // Do not silently close an open tab on the strength of an older cache:
+      // it may contain newer unsaved messages. A blank draft is the exception.
+      if (session.id.includes(":draft:") && !session.latestUser?.trim() && snapshot) return true;
+      return false;
     }
 
-    // Closing a tab with no local transcript would strand the user. Leave it
-    // open when both a fresh capture and a cached transcript are unavailable.
+    // A discarded tab cannot have changed since it was unloaded, so an existing
+    // local snapshot is sufficient to close/remove its tab record.
     const cached = await getSessionMessages(session.id);
-    if (cached.length > 0) return true;
-    // An untouched, blank new-chat tab has no conversation to lose.
-    return session.id.includes(":draft:") && !session.latestUser?.trim();
+    return cached.length > 0 || (session.id.includes(":draft:") && !session.latestUser?.trim());
   }
 
   async function closeSession(session: AISession) {
