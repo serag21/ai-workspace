@@ -350,10 +350,27 @@ export function App() {
 
       const hasStartedWork = Boolean(draft.latestUser?.trim()) ||
         draft.status === "working" || draft.status === "done" || draft.status === "needs-you";
-      if (!hasStartedWork) return;
-
       const actualId = getSessionId(provider, tab.url, tabId);
       if (actualId === draft.id) return;
+
+      if (!hasStartedWork) {
+        // If a blank draft navigated to a different conversation, discard only
+        // the empty draft alias. Do not transfer its project to a history item
+        // the user may have opened from the provider's own navigation.
+        const next = sessionsRef.current.filter((session) => session.id !== draft.id);
+        const saved = await chrome.storage.local.get(["sessionAssignments", "pinnedSessions", "sessionRegistry"]);
+        const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
+        const pins = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
+        const registry = (saved.sessionRegistry ?? {}) as Record<string, AISession>;
+        delete assignments[draft.id];
+        delete pins[draft.id];
+        delete registry[draft.id];
+        await chrome.storage.local.set({ sessions: next, sessionAssignments: assignments, pinnedSessions: pins, sessionRegistry: registry });
+        setSessions(next);
+        if (selectedSessionId === draft.id) setSelectedSessionId(actualId);
+        scheduleRefresh();
+        return;
+      }
       const existing = sessionsRef.current.find((session) => session.id === actualId);
       const migrated: AISession = {
         ...existing,
@@ -699,7 +716,9 @@ export function App() {
     // Closing a tab with no local transcript would strand the user. Leave it
     // open when both a fresh capture and a cached transcript are unavailable.
     const cached = await getSessionMessages(session.id);
-    return cached.length > 0;
+    if (cached.length > 0) return true;
+    // An untouched, blank new-chat tab has no conversation to lose.
+    return session.id.includes(":draft:") && !session.latestUser?.trim();
   }
 
   async function closeSession(session: AISession) {
