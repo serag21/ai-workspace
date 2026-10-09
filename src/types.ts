@@ -13,6 +13,8 @@ export interface AISession {
   id: string;
   provider: Provider;
   title: string;
+  /** User-defined display name; never overwrites the provider's real title. */
+  customTitle?: string;
   url: string;
   tabId: number | null;
   windowId: number | null;
