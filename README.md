@@ -18,6 +18,8 @@ The long-term direction is one session model for both web AI conversations and l
 - **Close tabs in bulk** after attempting a fresh local transcript capture first. Open tabs are left open if a fresh capture fails, even if an older cache exists, rather than risking loss of newer context.
 - **Local transcript search** over cached messages when the user searches, plus title and recent-message search.
 - **Related work** suggestions that surface other potentially relevant sessions.
+- **Project context and handoffs**: save per-project context, prepare bounded cross-provider handoffs, or open an unsent VS Code Agents draft with an optional linked local workspace URI.
+- **Local portability**: export/merge project settings and cached transcripts through a validated JSON backup.
 - **Performance safeguards**: no eager full snapshots of every session, throttled scans/publication, compact persisted previews, and no blind multi-attempt prompt retries.
 
 ## What it does not do yet
@@ -27,7 +29,7 @@ The long-term direction is one session model for both web AI conversations and l
 - Web integrations depend on provider page structure and can need fixes when a provider changes its UI.
 - The extension requires Chrome or a compatible Chromium browser, and the browser/provider session may need to open in the background to continue a closed conversation.
 - Provider sign-in prompts, rate limits, CAPTCHA/checks, and unusual provider errors are not yet exposed as a complete, provider-independent attention taxonomy.
-- There is no Claude Code/local terminal integration, desktop app, cross-device sync, account system, or cloud backend in the current MVP.
+- There is no automatic local workspace discovery, live repository/branch/dirty-state view, coding-agent transcript capture, shell/terminal control, desktop app, cross-device sync, account system, or cloud backend. VS Code's native Agents window can receive an unsent handoff draft from a linked project folder; that is not a terminal companion.
 
 ## Privacy and storage
 

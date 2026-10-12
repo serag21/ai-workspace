@@ -201,3 +201,12 @@ VS Code itself is rapidly closing basic session-organization gaps. The August 20
 
 This means “a UI that selects a repo and inserts a prompt into VS Code” is valuable but insufficient as a standalone moat. The more interesting opportunity is to start with an existing *browser AI session* and carry its explicitly selected task context to the correct local repository and terminal/agent, with an exact preview and no automatic execution. That is why the proposed local companion needs to know open VS Code workspaces and live terminal/agent sessions instead of only storing a string path.
 
+
+
+## October 2026 product implication: use VS Code's native draft surface first
+
+Current VS Code supports opening its Agents window with an unsent prompt and optional folder using a URL of the form `vscode://agents/new?prompt=...&workspace=...`. This is documented in the [VS Code command-line / URL guide](https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls) and the [VS Code 1.140 release notes](https://code.visualstudio.com/updates/v1_140). It reduces the cost of the first useful local-development handoff: no extra VS Code companion extension or Native Messaging registration is needed merely to start an agent draft in a chosen project.
+
+The current AI Workspace implementation follows that native flow. Each project may store an explicit local `file:///...` workspace URI; the Handoff modal can open a VS Code Agents draft with its task/context. The draft remains unsent. With no linked folder, VS Code opens a workspace-free draft for the user to assign. This still does **not** discover folders automatically, read repository metadata, control terminals, capture Claude Code/Codex histories, or unify local agent statuses with browser sessions.
+
+Competitive consequence: do not spend early effort recreating VS Code's native agent composer or bolting on a generic shell runner. First validate that users value moving real web conversations—with local project notes and selected transcript turns—into the correct local workspace. Only then build the narrower companion layer that can offer verified live repository/branch state and coding-session tracking. Competitors with deeper local-agent features (e.g. Clagentic Console, Crispy, ADDOM) remain ahead on that side of the product; the web-session continuity flow is still the proposition to validate, not a proven moat.
