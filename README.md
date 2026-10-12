@@ -74,7 +74,7 @@ Bug reports should include provider/browser, reproduction steps, expected behavi
 The release-candidate workflow now adds three pieces to the browser-session workspace:
 
 - **Project context:** save a compact project brief locally (goals, decisions, constraints, next milestone). It is included when preparing a cross-provider handoff.
-- **Cross-provider handoff:** from a session, prepare a new ChatGPT, Claude, or Gemini draft with the source title, recent cached messages, project brief, and your next-step instruction. The prompt is previewable, bounded, and opens unsent so you can inspect or edit it before sending.
+- **Cross-provider handoff:** from a session, prepare a new ChatGPT, Claude, or Gemini draft with the source title, recent cached messages, project brief, and your next-step instruction. The prompt is previewable, bounded, and opens as an editable unsent draft in Workspace. Nothing is sent until you click Send; the provider's signed-in native composer is not silently submitted.
 - **Portable local backup:** export projects, names, assignments, preferences, project context, and cached transcripts to JSON. Import merges rather than replaces; existing local values win on conflicts, imported sessions are restored as closed history, and URLs are restricted to the supported provider hosts.
 
 Backups contain sensitive conversation text. Store them somewhere private. Workspace does not upload backups to a cloud service. A handoff draft is not sent automatically; it is only delivered to a provider after you press Send there.

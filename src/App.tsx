@@ -612,13 +612,13 @@ export function App() {
         (session.latestUser ?? "").toLocaleLowerCase().includes(normalized) ||
         (session.latestAssistant ?? "").toLocaleLowerCase().includes(normalized) ||
         transcriptMatches.has(session.id))
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || statusRank[a.status] - statusRank[b.status] || lifecycleRank[a.lifecycle] - lifecycleRank[b.lifecycle] || a.title.localeCompare(b.title));
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || statusRank[a.status] - statusRank[b.status] || lifecycleRank[a.lifecycle] - lifecycleRank[b.lifecycle] || (b.lastActivityAt ?? b.snapshotAt ?? b.lastSeen) - (a.lastActivityAt ?? a.snapshotAt ?? a.lastSeen) || a.title.localeCompare(b.title));
   }, [projectSessions, query, statusFilter, viewFilter, transcriptMatches]);
 
   const counts = {
     working: sessions.filter((session) => session.status === "working" && session.lifecycle === "open").length,
-    needs: sessions.filter((session) => session.status === "needs-you").length,
-    done: sessions.filter((session) => session.status === "done").length,
+    needs: sessions.filter((session) => session.status === "needs-you" && session.lifecycle !== "closed").length,
+    done: sessions.filter((session) => session.status === "done" && session.lifecycle !== "closed").length,
   };
   const filterCounts = {
     all: projectSessions.length,
@@ -703,7 +703,7 @@ export function App() {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      if (file.size > 15 * 1024 * 1024) throw new Error("Backup files must be 15 MB or smaller.");
+      if (file.size > 50 * 1024 * 1024) throw new Error("Backup files must be 50 MB or smaller.");
       const backup = parseWorkspaceBackup(JSON.parse(await file.text()));
       if (!window.confirm("Merge this AI Workspace backup into your current data? Existing projects, labels, and cached conversations take priority on conflicts. Imported tabs will be restored as closed sessions, not opened automatically.")) return;
 
@@ -1106,9 +1106,9 @@ export function App() {
       <section className="attention">
         <div className="attention-header"><div><span className="section-kicker">Attention</span><p>See what needs you without opening every tab.</p></div><span className="live-dot" /></div>
         <div className="attention-grid">
-          <Stat icon={<CircleAlert size={16} />} label="Needs you" value={counts.needs} active={statusFilter === "needs-you"} onClick={() => { setSelectedProject("all"); setStatusFilter(statusFilter === "needs-you" ? null : "needs-you"); setSelectedSessionId(null); }} />
-          <Stat icon={<Activity size={16} />} label="Working" value={counts.working} active={statusFilter === "working"} onClick={() => { setSelectedProject("all"); setStatusFilter(statusFilter === "working" ? null : "working"); setSelectedSessionId(null); }} />
-          <Stat icon={<CheckCircle2 size={16} />} label="Done" value={counts.done} active={statusFilter === "done"} onClick={() => { setSelectedProject("all"); setStatusFilter(statusFilter === "done" ? null : "done"); setSelectedSessionId(null); }} />
+          <Stat icon={<CircleAlert size={16} />} label="Needs you" value={counts.needs} active={statusFilter === "needs-you"} onClick={() => { setSelectedProject("all"); setViewFilter("all"); setStatusFilter(statusFilter === "needs-you" ? null : "needs-you"); setSelectedSessionId(null); }} />
+          <Stat icon={<Activity size={16} />} label="Working" value={counts.working} active={statusFilter === "working"} onClick={() => { setSelectedProject("all"); setViewFilter("all"); setStatusFilter(statusFilter === "working" ? null : "working"); setSelectedSessionId(null); }} />
+          <Stat icon={<CheckCircle2 size={16} />} label="Done" value={counts.done} active={statusFilter === "done"} onClick={() => { setSelectedProject("all"); setViewFilter("all"); setStatusFilter(statusFilter === "done" ? null : "done"); setSelectedSessionId(null); }} />
         </div>
       </section>
 
@@ -1336,7 +1336,7 @@ export function App() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHandoffOpen(false); }}>
           <section className="handoff-modal" role="dialog" aria-modal="true" aria-labelledby="handoff-title">
             <header className="handoff-modal-header">
-              <div><span className="section-kicker">CONTEXT TRANSFER</span><h2 id="handoff-title">Continue this work elsewhere</h2><p>Start a fresh conversation with context from this thread. Nothing is sent until you press Send in the provider draft.</p></div>
+              <div><span className="section-kicker">CONTEXT TRANSFER</span><h2 id="handoff-title">Continue this work elsewhere</h2><p>Start a fresh conversation with context from this thread. Nothing is sent until you press Send in AI Workspace.</p></div>
               <button className="icon-button" aria-label="Close handoff" onClick={() => setHandoffOpen(false)}><X size={16} /></button>
             </header>
             <div className="handoff-fields">
@@ -1347,7 +1347,7 @@ export function App() {
               <div className="handoff-context-summary"><strong>{handoffProject?.name ?? "Inbox"}</strong><span>{projectBriefs[handoffProjectId]?.trim() ? "Project context included" : "No shared project context saved"}</span><span>{includeHandoffTranscript ? selectedMessages.length + " cached message(s) available; recent excerpt is capped" : "Transcript excluded"}</span></div>
               <details className="handoff-preview-disclosure"><summary>Review exact handoff prompt</summary><pre className="handoff-preview">{handoffPrompt}</pre></details>
             </div>
-            <footer className="handoff-modal-footer"><span>Local preview · editable in the destination composer · safe by default</span><button className="primary-small" onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Create draft in {getProviderLabel(handoffProvider)}</button></footer>
+            <footer className="handoff-modal-footer"><span>Local preview · editable in Workspace before sending · safe by default</span><button className="primary-small" onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Prepare {getProviderLabel(handoffProvider)} draft</button></footer>
           </section>
         </div>
       )}
