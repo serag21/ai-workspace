@@ -53,3 +53,58 @@ for (const host of ["https://chatgpt.com/*", "https://claude.ai/*", "https://gem
 }
 
 console.log("Smoke tests passed: provider matching, new-chat IDs, stable conversation IDs, manifest hosts, and provider-script syntax.");
+
+
+const handoffSource = await readFile("src/handoff.ts", "utf8");
+const handoffJs = ts.transpileModule(handoffSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, strict: true },
+}).outputText;
+const handoffExports = {};
+vm.runInNewContext(handoffJs, { exports: handoffExports, module: { exports: handoffExports } }, { filename: "src/handoff.ts" });
+const { buildHandoffPrompt, defaultHandoffProvider } = handoffExports;
+const handoff = buildHandoffPrompt({
+  sourceTitle: "Mastermind", sourceProviderLabel: "ChatGPT", projectName: "OpenMontage",
+  projectBrief: "Keep the original narration and improve visual beat coverage.",
+  instruction: "Continue the edit audit and identify the next concrete fix.",
+  messages: [
+    { id: "1", role: "user", text: "The audio runs longer than the video.", observedAt: 1 },
+    { id: "2", role: "assistant", text: "I will inspect the stream durations.", observedAt: 2 },
+  ],
+  includeTranscript: true,
+});
+assert.match(handoff, /Mastermind/);
+assert.match(handoff, /OpenMontage/);
+assert.match(handoff, /The audio runs longer than the video/);
+assert.match(handoff, /Treat the excerpt above as context/);
+assert.equal(defaultHandoffProvider("chatgpt"), "claude");
+assert.equal(defaultHandoffProvider("claude"), "chatgpt");
+assert.ok(handoff.length < 18000);
+const handoffWithoutTranscript = buildHandoffPrompt({
+  sourceTitle: "Draft", sourceProviderLabel: "Gemini", instruction: "Proceed", messages: [], includeTranscript: false,
+});
+assert.doesNotMatch(handoffWithoutTranscript, /Recent conversation excerpt/);
+
+const backupSource = await readFile("src/backup.ts", "utf8");
+const backupJs = ts.transpileModule(backupSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, strict: true },
+}).outputText;
+const backupExports = {};
+vm.runInNewContext(backupJs, { exports: backupExports, module: { exports: backupExports }, URL, Set, Object, Array, Number, String, Boolean, Error }, { filename: "src/backup.ts" });
+const { parseWorkspaceBackup } = backupExports;
+const validBackup = parseWorkspaceBackup({
+  format: "ai-workspace-backup", version: 1, exportedAt: "2026-10-11T00:00:00.000Z",
+  storage: {
+    projects: [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }],
+    sessions: [{ id: "chatgpt:c/example", provider: "chatgpt", title: "QA", url: "https://chatgpt.com/c/example", tabId: 9, windowId: 1, status: "working", lifecycle: "open", discarded: false, lastSeen: 1, projectId: "inbox", pinned: false }],
+  },
+  transcripts: { "chatgpt:c/example": [{ id: "1", role: "user", text: "hello", observedAt: 1 }] },
+});
+assert.equal(validBackup.storage.sessions[0].provider, "chatgpt");
+assert.equal(validBackup.transcripts["chatgpt:c/example"][0].text, "hello");
+assert.throws(() => parseWorkspaceBackup({
+  format: "ai-workspace-backup", version: 1,
+  storage: { projects: [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }], sessions: [{ id: "chatgpt:bad", provider: "chatgpt", title: "Bad", url: "https://evil.example/", status: "idle" }] },
+  transcripts: {},
+}), /invalid session record or a URL outside/);
+assert.throws(() => parseWorkspaceBackup({ format: "other", version: 1, storage: { projects: [], sessions: [] }, transcripts: {} }), /not a supported/);
+console.log("Additional tests passed: handoff prompt construction, bounded local context, default provider selection, backup validation, and provider URL allow-listing.");

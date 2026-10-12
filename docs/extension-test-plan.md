@@ -104,3 +104,17 @@ Do not call the extension ready for public release until:
 - no duplicate prompt delivery occurs in the closed-session flow;
 - performance impact is acceptable on real provider pages;
 - limitations and local data handling are clear to a first-time user.
+
+
+## 10. Project continuity, handoffs, and backup/restore
+
+- [ ] Open a project and add its shared context; save, switch projects, return, and verify notes persist independently per project.
+- [ ] Edit and clear a project brief; verify clearing removes the note without affecting sessions.
+- [ ] From a ChatGPT session, hand off to Claude; confirm the target draft opens in the background in the same project and the composer contains the source title, project brief, selected recent transcript, next-step instruction, and handoff rules.
+- [ ] Verify the modal's exact prompt preview matches the draft text; edit the draft before sending and confirm nothing was sent just by creating the draft.
+- [ ] Repeat Claude→ChatGPT and Gemini→ChatGPT; test with no cached messages, transcript excluded, and a long transcript/project brief.
+- [ ] Export a backup and verify it includes projects, labels, project context, session metadata, and cached transcripts. Treat the file as sensitive.
+- [ ] Import the backup into a clean test profile; sessions should return as closed history with cached transcripts, and project context/nicknames should remain.
+- [ ] Import the same backup into a profile with existing work; verify merge behavior keeps existing local records on conflicts and doesn't open tabs automatically.
+- [ ] Reject malformed backups, unsupported versions, oversized files, and imported URLs outside ChatGPT/Claude/Gemini.
+- [ ] Verify blank draft tabs are skipped during archive import and handoff prompts are never auto-submitted.

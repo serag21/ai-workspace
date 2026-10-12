@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, MessageSquarePlus, Pin, Pencil, Search, Trash2, X } from "lucide-react";
+import { Activity, ArrowLeft, ArrowRightLeft, CheckCircle2, CircleAlert, Download, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, MessageSquarePlus, Pin, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot, waitForTabComplete } from "./chrome";
 import { getProvider, getProviderLabel, getSessionId, isNewChatRoute } from "./providers";
-import type { AISession, Project, SessionMessage, SessionStatus } from "./types";
-import { getSessionMessages, migrateSessionMessages, saveSessionMessages, searchSessionIds } from "./sessionDb";
+import type { AISession, Project, Provider, SessionMessage, SessionStatus } from "./types";
+import { exportAllSessionMessages, getSessionMessages, migrateSessionMessages, saveSessionMessages, searchSessionIds } from "./sessionDb";
+import { buildHandoffPrompt, defaultHandoffProvider } from "./handoff";
+import { parseWorkspaceBackup } from "./backup";
 
 const seedProjects: Project[] = [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }];
 const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }> = {
@@ -13,6 +15,7 @@ const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }
   idle: { label: "Idle", icon: Activity },
 };
 const lifecycleRank = { open: 0, discarded: 1, closed: 2 } as const;
+const BACKUP_STORAGE_KEYS = ["projects", "sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "sessionMetadata", "dismissedSuggestions", "sessionLabels", "projectBriefs", "storageSchemaVersion"];
 const statusRank: Record<SessionStatus, number> = { "needs-you": 0, working: 1, done: 2, idle: 3 };
 type ViewFilter = "all" | "open" | "discarded" | "closed";
 type StatusFilter = SessionStatus | null;
@@ -198,6 +201,16 @@ export function App() {
   const [selectedMessages, setSelectedMessages] = useState<SessionMessage[]>([]);
   const [transcriptMatches, setTranscriptMatches] = useState<Set<string>>(new Set());
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<string, boolean>>({});
+  const [projectBriefs, setProjectBriefs] = useState<Record<string, string>>({});
+  const [projectBriefDraft, setProjectBriefDraft] = useState("");
+  const [projectBriefEditing, setProjectBriefEditing] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffProvider, setHandoffProvider] = useState<Provider>("claude");
+  const [handoffInstruction, setHandoffInstruction] = useState("Continue from the context below. Briefly confirm your understanding, then take the next concrete step. Ask only if a missing detail blocks progress.");
+  const [includeHandoffTranscript, setIncludeHandoffTranscript] = useState(true);
+  const [handoffMessageLimit, setHandoffMessageLimit] = useState(12);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
   const refreshTimer = useRef<number | null>(null);
   const refreshGeneration = useRef(0);
   const sessionsRef = useRef(sessions);
@@ -211,13 +224,14 @@ export function App() {
     setScanError(null);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "dismissedSuggestions", "sessionLabels"]);
+      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "dismissedSuggestions", "sessionLabels", "projectBriefs"]);
       if (generation !== refreshGeneration.current) return;
 
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
       const pinned = (saved.pinnedSessions ?? {}) as Record<string, boolean>;
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
       const savedDismissedSuggestions = (saved.dismissedSuggestions ?? {}) as Record<string, boolean>;
+      const savedProjectBriefs = (saved.projectBriefs ?? {}) as Record<string, string>;
       const labels = (saved.sessionLabels ?? {}) as Record<string, string>;
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
@@ -233,6 +247,7 @@ export function App() {
       const matchedStoredIds = new Set<string>();
       setProjects(savedProjects.length ? savedProjects : seedProjects);
       setDismissedSuggestions(savedDismissedSuggestions);
+      setProjectBriefs((current) => JSON.stringify(current) === JSON.stringify(savedProjectBriefs) ? current : savedProjectBriefs);
 
       const liveSessions = discovered.map((session) => {
         const legacyId = session.provider + ":" + session.tabId;
@@ -287,14 +302,14 @@ export function App() {
     refreshTimer.current = window.setTimeout(() => { void refresh(); }, 250);
   }
 
-  async function createNewChat() {
+  async function createNewChat(options: { provider?: Provider; projectId?: string; initialPrompt?: string } = {}) {
     const urls = {
       chatgpt: "https://chatgpt.com/",
       claude: "https://claude.ai/new",
       gemini: "https://gemini.google.com/app",
     } as const;
-    const provider = newChatProvider;
-    const projectId = selectedProject === "all" ? "inbox" : selectedProject;
+    const provider = options.provider ?? newChatProvider;
+    const projectId = options.projectId ?? (selectedProject === "all" ? "inbox" : selectedProject);
 
     setScanError(null);
     try {
@@ -341,7 +356,9 @@ export function App() {
       setQuery("");
       setStatusFilter(null);
       setViewFilter("all");
-      setComposer("");
+      setComposer(options.initialPrompt ?? "");
+      setNewChatProvider(provider);
+      if (options.initialPrompt) setHandoffOpen(false);
       scheduleRefresh();
     } catch (error) {
       setScanError(error instanceof Error ? error.message : "Could not start a new provider conversation.");
@@ -618,6 +635,180 @@ export function App() {
     () => buildRelatedSessions(selectedSession, sessions),
     [selectedSession, sessions],
   );
+  const handoffProjectId = selectedSession?.projectId ?? "inbox";
+  const handoffProject = projects.find((project) => project.id === handoffProjectId);
+  const handoffPrompt = useMemo(() => selectedSession ? buildHandoffPrompt({
+    sourceTitle: sessionDisplayTitle(selectedSession),
+    sourceProviderLabel: getProviderLabel(selectedSession.provider),
+    projectName: handoffProject?.name,
+    projectBrief: projectBriefs[handoffProjectId],
+    instruction: handoffInstruction,
+    messages: selectedMessages,
+    includeTranscript: includeHandoffTranscript,
+    messageLimit: handoffMessageLimit,
+    latestUser: selectedSession.latestUser,
+    latestAssistant: selectedSession.latestAssistant,
+  }) : "", [selectedSession, handoffProject?.name, handoffProjectId, projectBriefs, handoffInstruction, selectedMessages, includeHandoffTranscript, handoffMessageLimit]);
+
+  useEffect(() => {
+    setProjectBriefDraft(projectBriefs[selectedProject] ?? "");
+    setProjectBriefEditing(false);
+  }, [selectedProject, projectBriefs]);
+
+  async function saveProjectBrief() {
+    if (selectedProject === "all" || selectedProject === "inbox") return;
+    const next = { ...projectBriefs };
+    const value = projectBriefDraft.trim().slice(0, 4000);
+    if (value) next[selectedProject] = value;
+    else delete next[selectedProject];
+    await chrome.storage.local.set({ projectBriefs: next });
+    setProjectBriefs(next);
+    setProjectBriefEditing(false);
+  }
+
+  function openHandoff() {
+    if (!selectedSession) return;
+    setHandoffProvider(defaultHandoffProvider(selectedSession.provider));
+    setHandoffInstruction("Continue from the context below. Briefly confirm your understanding, then take the next concrete step. Ask only if a missing detail blocks progress.");
+    setIncludeHandoffTranscript(true);
+    setHandoffMessageLimit(12);
+    setHandoffOpen(true);
+  }
+
+  async function exportWorkspaceBackup() {
+    if (!window.confirm("Export a local AI Workspace backup? The JSON file includes cached conversation text, project notes, titles, and labels. Treat it like private conversation history.")) return;
+    setBackupBusy(true);
+    try {
+      const storage = await chrome.storage.local.get(BACKUP_STORAGE_KEYS);
+      const transcripts = await exportAllSessionMessages();
+      const payload = { format: "ai-workspace-backup", version: 1, exportedAt: new Date().toISOString(), storage, transcripts };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "ai-workspace-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not export the local workspace backup.");
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function importWorkspaceBackup(event: import("react").ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 15 * 1024 * 1024) throw new Error("Backup files must be 15 MB or smaller.");
+      const backup = parseWorkspaceBackup(JSON.parse(await file.text()));
+      if (!window.confirm("Merge this AI Workspace backup into your current data? Existing projects, labels, and cached conversations take priority on conflicts. Imported tabs will be restored as closed sessions, not opened automatically.")) return;
+
+      setBackupBusy(true);
+      const current = await chrome.storage.local.get(BACKUP_STORAGE_KEYS);
+      const currentProjects = ((current.projects ?? seedProjects) as Project[]).length
+        ? (current.projects as Project[])
+        : seedProjects;
+      const mergedProjects = [...currentProjects];
+      const projectIdMap: Record<string, string> = { inbox: "inbox" };
+
+      for (const incomingProject of backup.storage.projects) {
+        if (incomingProject.id === "inbox") continue;
+        const byId = mergedProjects.find((project) => project.id === incomingProject.id);
+        if (byId) {
+          projectIdMap[incomingProject.id] = byId.id;
+          continue;
+        }
+        const byName = mergedProjects.find((project) => project.name.toLocaleLowerCase() === incomingProject.name.toLocaleLowerCase());
+        if (byName) {
+          projectIdMap[incomingProject.id] = byName.id;
+          continue;
+        }
+        const id = incomingProject.id;
+        let name = incomingProject.name;
+        let suffix = 2;
+        while (mergedProjects.some((project) => project.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+          name = incomingProject.name + " (imported " + suffix + ")";
+          suffix += 1;
+        }
+        mergedProjects.push({ ...incomingProject, id, name });
+        projectIdMap[incomingProject.id] = id;
+      }
+
+      const localSessions = (current.sessions ?? []) as AISession[];
+      const localRegistry = (current.sessionRegistry ?? {}) as Record<string, AISession>;
+      const remapArchivedSession = (session: AISession): AISession => ({
+        ...session,
+        tabId: null,
+        windowId: null,
+        lifecycle: "closed",
+        discarded: false,
+        status: session.status === "working" ? "idle" : session.status,
+        projectId: session.projectId ? (projectIdMap[session.projectId] ?? "inbox") : "inbox",
+      });
+      const incomingById = new Map<string, AISession>();
+      for (const session of Object.values(backup.storage.sessionRegistry ?? {})) {
+        if (!session.id.includes(":draft:")) incomingById.set(session.id, remapArchivedSession(session));
+      }
+      for (const session of backup.storage.sessions) {
+        if (!session.id.includes(":draft:")) incomingById.set(session.id, remapArchivedSession(session));
+      }
+      const incomingSessions = [...incomingById.values()];
+      const sessionMap = new Map<string, AISession>();
+      for (const session of incomingSessions) sessionMap.set(session.id, session);
+      for (const session of localSessions) sessionMap.set(session.id, session);
+      const nextSessions = [...sessionMap.values()];
+
+      const remapProjectMap = (source: Record<string, string> | undefined) => Object.fromEntries(
+        Object.entries(source ?? {}).filter(([id]) => !id.includes(":draft:")).map(([id, value]) => [id, projectIdMap[value] ?? value]),
+      );
+      const mergeRecord = <T,>(incoming: Record<string, T> | undefined, existing: Record<string, T> | undefined): Record<string, T> => ({ ...(incoming ?? {}), ...(existing ?? {}) });
+      const incomingBriefs = Object.fromEntries(Object.entries(backup.storage.projectBriefs ?? {})
+        .map(([id, value]) => [projectIdMap[id] ?? id, value]));
+      const incomingRegistry = Object.fromEntries(Object.entries(backup.storage.sessionRegistry ?? {})
+        .filter(([id]) => !id.includes(":draft:"))
+        .map(([id, session]) => [id, remapArchivedSession(session)]));
+      const safeIncomingAssignments = remapProjectMap(backup.storage.sessionAssignments);
+      const safeIncomingPins = Object.fromEntries(Object.entries(backup.storage.pinnedSessions ?? {}).filter(([id]) => !id.includes(":draft:")));
+      const safeIncomingLabels = Object.fromEntries(Object.entries(backup.storage.sessionLabels ?? {}).filter(([id]) => !id.includes(":draft:")));
+      const safeIncomingMetadata = Object.fromEntries(Object.entries(backup.storage.sessionMetadata ?? {}).filter(([id]) => !id.includes(":draft:")));
+
+      await chrome.storage.local.set({
+        projects: mergedProjects,
+        sessions: nextSessions,
+        sessionRegistry: { ...incomingRegistry, ...localRegistry },
+        sessionAssignments: mergeRecord(safeIncomingAssignments, current.sessionAssignments as Record<string, string> | undefined),
+        pinnedSessions: mergeRecord(safeIncomingPins, current.pinnedSessions as Record<string, boolean> | undefined),
+        sessionMetadata: mergeRecord(safeIncomingMetadata, current.sessionMetadata as Record<string, string> | undefined),
+        dismissedSuggestions: mergeRecord(backup.storage.dismissedSuggestions, current.dismissedSuggestions as Record<string, boolean> | undefined),
+        sessionLabels: mergeRecord(safeIncomingLabels, current.sessionLabels as Record<string, string> | undefined),
+        projectBriefs: mergeRecord(incomingBriefs, current.projectBriefs as Record<string, string> | undefined),
+        storageSchemaVersion: 2,
+      });
+
+      let transcriptsRestored = 0;
+      for (const [sessionId, messages] of Object.entries(backup.transcripts)) {
+        if (sessionId.includes(":draft:") || !incomingById.has(sessionId)) continue;
+        const existingMessages = await getSessionMessages(sessionId);
+        if (messages.length > existingMessages.length) {
+          await saveSessionMessages(sessionId, messages);
+          transcriptsRestored += 1;
+        }
+      }
+
+      const addedSessions = incomingSessions.filter((session) => !localSessions.some((currentSession) => currentSession.id === session.id)).length;
+      await refresh();
+      window.alert("Backup merged successfully. Added " + addedSessions + " historical session(s), restored " + transcriptsRestored + " transcript(s), and kept existing local records on conflicts. Blank drafts are not imported.");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not import this workspace backup.");
+    } finally {
+      setBackupBusy(false);
+      input.value = "";
+    }
+  }
 
   async function renameSession(session: AISession) {
     const value = window.prompt(
@@ -901,6 +1092,9 @@ export function App() {
             <option value="gemini">Gemini</option>
           </select>
           <button className="new-chat-button" title={"New " + getProviderLabel(newChatProvider) + " chat"} aria-label={"New " + getProviderLabel(newChatProvider) + " chat"} onClick={() => void createNewChat()}><MessageSquarePlus size={15} /><span>New chat</span></button>
+          <button className="icon-button" title="Export local backup" aria-label="Export local backup" disabled={backupBusy} onClick={() => void exportWorkspaceBackup()}><Download size={16} /></button>
+          <button className="icon-button" title="Import and merge backup" aria-label="Import and merge backup" disabled={backupBusy} onClick={() => backupInputRef.current?.click()}><Upload size={16} /></button>
+          <input ref={backupInputRef} hidden type="file" accept="application/json,.json" aria-label="Choose AI Workspace backup" onChange={(event) => void importWorkspaceBackup(event)} />
           <button className="icon-button" title="Create project" aria-label="Create project" onClick={() => void createProject()}><FolderPlus size={18} /></button>
         </div>
       </header>
@@ -953,6 +1147,23 @@ export function App() {
                 </div>
               </div>
               {scanError && <div className="scan-error" role="status">Could not refresh sessions: {scanError} <button onClick={() => void refresh()}>Retry</button></div>}
+
+              {selectedProject !== "all" && selectedProject !== "inbox" && projects.some((project) => project.id === selectedProject) && (
+                <section className="project-brief-panel" aria-label="Project context">
+                  <div className="project-brief-header">
+                    <div><strong>Project context</strong><span>Saved on this device · included in handoffs</span></div>
+                    {!projectBriefEditing && <button className="quiet-button" onClick={() => setProjectBriefEditing(true)}>{projectBriefs[selectedProject] ? "Edit" : "Add context"}</button>}
+                  </div>
+                  {projectBriefEditing ? (
+                    <>
+                      <textarea className="project-brief-input" value={projectBriefDraft} maxLength={4000} onChange={(event) => setProjectBriefDraft(event.target.value)} placeholder="Project goals, decisions, constraints, repository details, and the next milestone…" />
+                      <div className="project-brief-footer"><span>{projectBriefDraft.length}/4000</span><div><button className="quiet-button" onClick={() => { setProjectBriefDraft(projectBriefs[selectedProject] ?? ""); setProjectBriefEditing(false); }}>Cancel</button><button className="primary-small" onClick={() => void saveProjectBrief()}>Save context</button></div></div>
+                    </>
+                  ) : (
+                    <p className={projectBriefs[selectedProject] ? "" : "project-brief-empty"}>{projectBriefs[selectedProject] || "Add the project's goal, constraints, decisions, and current next step once. AI Workspace can carry it into a new provider handoff."}</p>
+                  )}
+                </section>
+              )}
 
               {selectedProject === "inbox" && !query.trim() && !statusFilter && projectSuggestions.length > 0 && (
                 <section className="suggestions-panel">
@@ -1054,6 +1265,7 @@ export function App() {
                     </div>
                     <div className="detail-actions">
                       <button className="session-rename" title="Rename session" aria-label="Rename session" onClick={() => void renameSession(selectedSession)}><Pencil size={13} /></button>
+                      <button className="handoff-button" onClick={openHandoff} title="Prepare context for another AI provider"><ArrowRightLeft size={13} /><span>Handoff</span></button>
                       <button className="refresh" onClick={() => void openInChrome(selectedSession)}><ExternalLink size={13} /> Open in Chrome</button>
                       {selectedSession.lifecycle !== "closed" && selectedSession.tabId !== null && <button className="session-close" onClick={() => void closeSession(selectedSession)} title="Close browser tab"><X size={14} /></button>}
                     </div>
@@ -1116,6 +1328,25 @@ export function App() {
           </div>
         </main>
       </div>
+      {handoffOpen && selectedSession && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHandoffOpen(false); }}>
+          <section className="handoff-modal" role="dialog" aria-modal="true" aria-labelledby="handoff-title">
+            <header className="handoff-modal-header">
+              <div><span className="section-kicker">CONTEXT TRANSFER</span><h2 id="handoff-title">Continue this work elsewhere</h2><p>Start a fresh conversation with context from this thread. Nothing is sent until you press Send in the provider draft.</p></div>
+              <button className="icon-button" aria-label="Close handoff" onClick={() => setHandoffOpen(false)}><X size={16} /></button>
+            </header>
+            <div className="handoff-fields">
+              <label>Destination AI<select value={handoffProvider} onChange={(event) => setHandoffProvider(event.target.value as Provider)}><option value="chatgpt">ChatGPT</option><option value="claude">Claude</option><option value="gemini">Gemini</option></select></label>
+              <label>What should it do next?<textarea value={handoffInstruction} maxLength={3000} onChange={(event) => setHandoffInstruction(event.target.value)} rows={3} placeholder="Describe the next step for the destination AI…" /></label>
+              <label className="handoff-check"><input type="checkbox" checked={includeHandoffTranscript} onChange={(event) => setIncludeHandoffTranscript(event.target.checked)} /> Include recent cached conversation turns</label>
+              {includeHandoffTranscript && <label>How much recent context?<select value={handoffMessageLimit} onChange={(event) => setHandoffMessageLimit(Number(event.target.value))}><option value={6}>Last 6 messages</option><option value={12}>Last 12 messages</option><option value={20}>Last 20 messages</option></select></label>}
+              <div className="handoff-context-summary"><strong>{handoffProject?.name ?? "Inbox"}</strong><span>{projectBriefs[handoffProjectId]?.trim() ? "Project context included" : "No shared project context saved"}</span><span>{includeHandoffTranscript ? selectedMessages.length + " cached message(s) available; recent excerpt is capped" : "Transcript excluded"}</span></div>
+              <details className="handoff-preview-disclosure"><summary>Review exact handoff prompt</summary><pre className="handoff-preview">{handoffPrompt}</pre></details>
+            </div>
+            <footer className="handoff-modal-footer"><span>Local preview · editable in the destination composer · safe by default</span><button className="primary-small" onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Create draft in {getProviderLabel(handoffProvider)}</button></footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

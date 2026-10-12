@@ -170,3 +170,28 @@ export async function migrateSessionMessages(fromSessionId: string, toSessionId:
     db.close();
   }
 }
+
+
+/** Export cached transcripts for an explicit user-triggered local backup. */
+export async function exportAllSessionMessages(): Promise<Record<string, SessionMessage[]>> {
+  const db = await openDatabase();
+  try {
+    return await new Promise<Record<string, SessionMessage[]>>((resolve, reject) => {
+      const transcripts: Record<string, SessionMessage[]> = {};
+      const request = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).openCursor();
+      request.onerror = () => reject(request.error ?? new Error("Could not export cached transcripts."));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve(transcripts);
+          return;
+        }
+        const stored = cursor.value as StoredTranscript;
+        if (stored.sessionId && Array.isArray(stored.messages)) transcripts[stored.sessionId] = boundMessages(stored.messages);
+        cursor.continue();
+      };
+    });
+  } finally {
+    db.close();
+  }
+}

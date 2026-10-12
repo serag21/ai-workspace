@@ -67,3 +67,16 @@ Core session management is intended to remain free and local-first. Optional mon
 ## Contributing
 
 Bug reports should include provider/browser, reproduction steps, expected behavior, actual behavior, and any performance impact. Do not include private conversation text, access tokens, or other secrets in public issues.
+
+
+## Project context, handoffs, and backups
+
+The release-candidate workflow now adds three pieces to the browser-session workspace:
+
+- **Project context:** save a compact project brief locally (goals, decisions, constraints, next milestone). It is included when preparing a cross-provider handoff.
+- **Cross-provider handoff:** from a session, prepare a new ChatGPT, Claude, or Gemini draft with the source title, recent cached messages, project brief, and your next-step instruction. The prompt is previewable, bounded, and opens unsent so you can inspect or edit it before sending.
+- **Portable local backup:** export projects, names, assignments, preferences, project context, and cached transcripts to JSON. Import merges rather than replaces; existing local values win on conflicts, imported sessions are restored as closed history, and URLs are restricted to the supported provider hosts.
+
+Backups contain sensitive conversation text. Store them somewhere private. Workspace does not upload backups to a cloud service. A handoff draft is not sent automatically; it is only delivered to a provider after you press Send there.
+
+The local VS Code/repository companion remains a separate, unshipped follow-on. The extension does not yet discover local workspaces or control terminals.

@@ -64,3 +64,74 @@
 
 .session-rename{width:29px;height:29px;display:grid;place-items:center;border:1px solid #262832;background:#15161b;color:#777a87;border-radius:8px;cursor:pointer;flex:none}
 .session-rename:hover{color:#d6c9f7;background:#211d2d;border-color:#38304e}
+
+
+/* Release-candidate workflows: clearer type, project context, safe handoffs and backups. */
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #a89ae8;outline-offset:2px}
+button:disabled{opacity:.52;cursor:not-allowed}
+.icon-button{width:32px;height:32px;flex:none}
+.icon-button:hover:not(:disabled){color:#eee9ff;background:#211d2d;border-color:#403657}
+.topbar-actions{gap:5px}
+.new-chat-provider{max-width:90px}
+.project-row{font-size:12px}
+.sessions-header h2{font-size:15px}
+.sessions-header>div>span{font-size:11px}
+.session-title{font-size:12px}
+.session-meta{font-size:10px}
+.session-preview{font-size:10px;line-height:1.45}
+.view-filters button{font-size:10px}
+.refresh{font-size:10px;min-height:29px}
+.message-body{font-size:11px;line-height:1.6}
+.message-label{font-size:10px}
+.composer textarea{font-size:12px}
+.composer-footer span{font-size:10px}
+.handoff-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:29px;border:1px solid #493d68;background:#201a30;color:#d6c9f7;border-radius:8px;padding:5px 8px;font-size:10px;white-space:nowrap;cursor:pointer}
+.handoff-button:hover{background:#2a2140;border-color:#5a4b7d}
+.project-brief-panel{border:1px solid #292638;background:linear-gradient(150deg,#17151f,#121318);border-radius:11px;padding:10px;margin:0 0 10px}
+.project-brief-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.project-brief-header>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.project-brief-header strong{font-size:11px;color:#e6e0fa}
+.project-brief-header span{font-size:9px;color:#817b91;line-height:1.4}
+.project-brief-panel p{font-size:11px;line-height:1.5;color:#bec0ca;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0}
+.project-brief-panel p.project-brief-empty{color:#777a87}
+.project-brief-input{width:100%;min-height:84px;max-height:190px;resize:vertical;border:1px solid #343040;border-radius:8px;background:#0f1014;color:#e6e7ef;padding:9px;margin-top:9px;font:inherit;font-size:11px;line-height:1.5}
+.project-brief-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px}
+.project-brief-footer>span{font-size:9px;color:#777a87}
+.project-brief-footer>div{display:flex;gap:5px}
+.quiet-button,.primary-small{display:inline-flex;align-items:center;justify-content:center;gap:5px;border-radius:7px;padding:6px 9px;font-size:10px;line-height:1.25;cursor:pointer}
+.quiet-button{border:1px solid #292b35;background:#16171d;color:#a9acb8}
+.quiet-button:hover{background:#1e2028;color:#e1e2e8}
+.primary-small{border:1px solid #514171;background:#33264d;color:#f0eaff;font-weight:600}
+.primary-small:hover{background:#40305e}
+.modal-backdrop{position:fixed;z-index:1000;inset:0;display:flex;align-items:center;justify-content:center;padding:14px;background:rgba(4,5,8,.78);backdrop-filter:blur(7px)}
+.handoff-modal{width:min(620px,100%);max-height:min(92vh,900px);display:flex;flex-direction:column;overflow:hidden;border:1px solid #353044;border-radius:16px;background:#111218;box-shadow:0 22px 75px rgba(0,0,0,.58)}
+.handoff-modal-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 17px 13px;border-bottom:1px solid #262630}
+.handoff-modal-header h2{font-size:19px;letter-spacing:-.035em;margin:5px 0 6px;color:#f0eef7}
+.handoff-modal-header p{font-size:11px;line-height:1.5;color:#9193a0;margin:0;max-width:460px}
+.handoff-fields{display:flex;flex-direction:column;gap:12px;padding:14px 17px;overflow:auto}
+.handoff-fields>label{display:flex;flex-direction:column;gap:6px;color:#c7c8d1;font-size:11px;font-weight:600}
+.handoff-fields select,.handoff-fields textarea{width:100%;border:1px solid #30313c;background:#15161d;color:#eaebf1;border-radius:8px;padding:9px;font:inherit;font-size:11px;line-height:1.45;outline:none}
+.handoff-fields textarea{resize:vertical;min-height:78px}
+.handoff-fields select:focus,.handoff-fields textarea:focus{border-color:#615080}
+.handoff-fields .handoff-check{display:flex;align-items:center;flex-direction:row;gap:8px;font-weight:500}
+.handoff-check input{accent-color:#9a86d8;width:14px;height:14px}
+.handoff-context-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.handoff-context-summary strong{color:#d8cef9;font-size:10px;padding:5px 7px;border:1px solid #3c3150;border-radius:6px;background:#211b2e}
+.handoff-context-summary span{font-size:9px;color:#888b97;border:1px solid #292b35;border-radius:6px;padding:5px 7px}
+.handoff-preview-disclosure{border:1px solid #2b2c37;border-radius:8px;background:#14151b}
+.handoff-preview-disclosure summary{padding:9px 10px;color:#b9b2cc;font-size:10px;cursor:pointer}
+.handoff-preview{max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;border-top:1px solid #292a34;padding:10px;color:#aaaeba;font:10px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+.handoff-modal-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 17px;border-top:1px solid #262630;background:#0f1015}
+.handoff-modal-footer>span{font-size:9px;line-height:1.4;color:#797b88;max-width:210px}
+.handoff-modal-footer .primary-small{flex:none}
+@media(max-width:500px){
+ .modal-backdrop{padding:8px}
+ .handoff-modal{max-height:96vh;border-radius:12px}
+ .handoff-modal-header{padding:13px}
+ .handoff-modal-header h2{font-size:17px}
+ .handoff-fields{padding:12px;gap:10px}
+ .handoff-modal-footer{padding:10px 12px;align-items:flex-end}
+ .handoff-modal-footer .primary-small{max-width:190px;white-space:normal;text-align:center}
+ .handoff-modal-footer>span{max-width:120px}
+ .handoff-button span{display:none}
+}
