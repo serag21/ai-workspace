@@ -89,7 +89,15 @@ const backupJs = ts.transpileModule(backupSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, strict: true },
 }).outputText;
 const backupExports = {};
-vm.runInNewContext(backupJs, { exports: backupExports, module: { exports: backupExports }, URL, Set, Object, Array, Number, String, Boolean, Error }, { filename: "src/backup.ts" });
+vm.runInNewContext(backupJs, {
+  exports: backupExports,
+  module: { exports: backupExports },
+  URL, Set, Object, Array, Number, String, Boolean, Error,
+  require: (moduleName) => {
+    if (moduleName === "./handoff") return handoffExports;
+    throw new Error("Unexpected smoke-test dependency: " + moduleName);
+  },
+}, { filename: "src/backup.ts" });
 const { parseWorkspaceBackup } = backupExports;
 const validBackup = parseWorkspaceBackup({
   format: "ai-workspace-backup", version: 1, exportedAt: "2026-10-11T00:00:00.000Z",
