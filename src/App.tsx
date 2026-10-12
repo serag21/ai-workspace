@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowLeft, ArrowRightLeft, CheckCircle2, CircleAlert, Download, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, MessageSquarePlus, Pin, Pencil, Search, Trash2, Upload, X } from "lucide-react";
+import { Activity, ArrowLeft, ArrowRightLeft, CheckCircle2, CircleAlert, Code2, Download, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, MessageSquarePlus, Pin, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot, waitForTabComplete } from "./chrome";
 import { getProvider, getProviderLabel, getSessionId, isNewChatRoute } from "./providers";
 import type { AISession, Project, Provider, SessionMessage, SessionStatus } from "./types";
 import { exportAllSessionMessages, getSessionMessages, migrateSessionMessages, saveSessionMessages, searchSessionIds } from "./sessionDb";
-import { buildHandoffPrompt, defaultHandoffProvider } from "./handoff";
+import { buildHandoffPrompt, buildVSCodeAgentUrl, defaultHandoffProvider, normalizeWorkspaceFolderUri } from "./handoff";
 import { parseWorkspaceBackup } from "./backup";
 
 const seedProjects: Project[] = [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }];
@@ -15,7 +15,7 @@ const statusMeta: Record<SessionStatus, { label: string; icon: typeof Activity }
   idle: { label: "Idle", icon: Activity },
 };
 const lifecycleRank = { open: 0, discarded: 1, closed: 2 } as const;
-const BACKUP_STORAGE_KEYS = ["projects", "sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "sessionMetadata", "dismissedSuggestions", "sessionLabels", "projectBriefs", "storageSchemaVersion"];
+const BACKUP_STORAGE_KEYS = ["projects", "sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "sessionMetadata", "dismissedSuggestions", "sessionLabels", "projectBriefs", "projectWorkspaceUris", "storageSchemaVersion"];
 const statusRank: Record<SessionStatus, number> = { "needs-you": 0, working: 1, done: 2, idle: 3 };
 type ViewFilter = "all" | "open" | "discarded" | "closed";
 type StatusFilter = SessionStatus | null;
@@ -203,6 +203,8 @@ export function App() {
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<string, boolean>>({});
   const [projectBriefs, setProjectBriefs] = useState<Record<string, string>>({});
   const [projectBriefDraft, setProjectBriefDraft] = useState("");
+  const [projectWorkspaceUris, setProjectWorkspaceUris] = useState<Record<string, string>>({});
+  const [projectWorkspaceUriDraft, setProjectWorkspaceUriDraft] = useState("");
   const [projectBriefEditing, setProjectBriefEditing] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [handoffProvider, setHandoffProvider] = useState<Provider>("claude");
@@ -224,7 +226,7 @@ export function App() {
     setScanError(null);
     try {
       const discovered = await discoverOpenSessions();
-      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "dismissedSuggestions", "sessionLabels", "projectBriefs"]);
+      const saved = await chrome.storage.local.get(["sessions", "sessionRegistry", "sessionAssignments", "pinnedSessions", "projects", "sessionMetadata", "dismissedSuggestions", "sessionLabels", "projectBriefs", "projectWorkspaceUris"]);
       if (generation !== refreshGeneration.current) return;
 
       const assignments = (saved.sessionAssignments ?? {}) as Record<string, string>;
@@ -232,6 +234,7 @@ export function App() {
       const savedProjects = (saved.projects ?? seedProjects) as Project[];
       const savedDismissedSuggestions = (saved.dismissedSuggestions ?? {}) as Record<string, boolean>;
       const savedProjectBriefs = (saved.projectBriefs ?? {}) as Record<string, string>;
+      const savedProjectWorkspaceUris = (saved.projectWorkspaceUris ?? {}) as Record<string, string>;
       const labels = (saved.sessionLabels ?? {}) as Record<string, string>;
       const metadata = (saved.sessionMetadata ?? {}) as Record<string, string>;
       const storedSessions = ((saved.sessions ?? []) as AISession[]).map(normalizeStoredSession);
@@ -248,6 +251,7 @@ export function App() {
       setProjects(savedProjects.length ? savedProjects : seedProjects);
       setDismissedSuggestions(savedDismissedSuggestions);
       setProjectBriefs((current) => JSON.stringify(current) === JSON.stringify(savedProjectBriefs) ? current : savedProjectBriefs);
+      setProjectWorkspaceUris((current) => JSON.stringify(current) === JSON.stringify(savedProjectWorkspaceUris) ? current : savedProjectWorkspaceUris);
 
       const liveSessions = discovered.map((session) => {
         const legacyId = session.provider + ":" + session.tabId;
@@ -652,17 +656,27 @@ export function App() {
 
   useEffect(() => {
     setProjectBriefDraft(projectBriefs[selectedProject] ?? "");
+    setProjectWorkspaceUriDraft(projectWorkspaceUris[selectedProject] ?? "");
     setProjectBriefEditing(false);
-  }, [selectedProject, projectBriefs]);
+  }, [selectedProject, projectBriefs, projectWorkspaceUris]);
 
   async function saveProjectBrief() {
     if (selectedProject === "all" || selectedProject === "inbox") return;
+    const normalizedWorkspace = normalizeWorkspaceFolderUri(projectWorkspaceUriDraft);
+    if (projectWorkspaceUriDraft.trim() && !normalizedWorkspace) {
+      window.alert("Enter a local file:///... folder URI for VS Code, or clear the field. Network shares and other URL schemes are not accepted.");
+      return;
+    }
     const next = { ...projectBriefs };
     const value = projectBriefDraft.trim().slice(0, 4000);
     if (value) next[selectedProject] = value;
     else delete next[selectedProject];
-    await chrome.storage.local.set({ projectBriefs: next });
+    const nextWorkspaceUris = { ...projectWorkspaceUris };
+    if (normalizedWorkspace) nextWorkspaceUris[selectedProject] = normalizedWorkspace;
+    else delete nextWorkspaceUris[selectedProject];
+    await chrome.storage.local.set({ projectBriefs: next, projectWorkspaceUris: nextWorkspaceUris });
     setProjectBriefs(next);
+    setProjectWorkspaceUris(nextWorkspaceUris);
     setProjectBriefEditing(false);
   }
 
@@ -673,6 +687,19 @@ export function App() {
     setIncludeHandoffTranscript(true);
     setHandoffMessageLimit(12);
     setHandoffOpen(true);
+  }
+
+  async function openVSCodeAgentDraft() {
+    if (!selectedSession) return;
+    try {
+      const workspaceUri = projectWorkspaceUris[handoffProjectId];
+      const targetUrl = buildVSCodeAgentUrl(handoffPrompt, workspaceUri);
+      // This opens VS Code's own New Agent draft. It never submits the prompt.
+      await chrome.tabs.create({ url: targetUrl, active: true });
+      setHandoffOpen(false);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not open a VS Code Agent draft. You can still prepare the same task for another provider.");
+    }
   }
 
   async function exportWorkspaceBackup() {
@@ -772,6 +799,9 @@ export function App() {
       const incomingBriefs = Object.fromEntries(Object.entries(backup.storage.projectBriefs ?? {})
         .filter(([id]) => Boolean(projectIdMap[id]))
         .map(([id, value]) => [projectIdMap[id], value]));
+      const incomingWorkspaceUris = Object.fromEntries(Object.entries(backup.storage.projectWorkspaceUris ?? {})
+        .filter(([id]) => Boolean(projectIdMap[id]))
+        .map(([id, value]) => [projectIdMap[id], value]));
       const incomingRegistry = Object.fromEntries(Object.entries(backup.storage.sessionRegistry ?? {})
         .filter(([id]) => !id.includes(":draft:"))
         .map(([id, session]) => [id, remapArchivedSession(session)]));
@@ -790,6 +820,7 @@ export function App() {
         dismissedSuggestions: mergeRecord(backup.storage.dismissedSuggestions, current.dismissedSuggestions as Record<string, boolean> | undefined),
         sessionLabels: mergeRecord(safeIncomingLabels, current.sessionLabels as Record<string, string> | undefined),
         projectBriefs: mergeRecord(incomingBriefs, current.projectBriefs as Record<string, string> | undefined),
+        projectWorkspaceUris: mergeRecord(incomingWorkspaceUris, current.projectWorkspaceUris as Record<string, string> | undefined),
         storageSchemaVersion: 2,
       });
 
@@ -1156,15 +1187,19 @@ export function App() {
                 <section className="project-brief-panel" aria-label="Project context">
                   <div className="project-brief-header">
                     <div><strong>Project context</strong><span>Saved on this device · included in handoffs</span></div>
-                    {!projectBriefEditing && <button className="quiet-button" onClick={() => setProjectBriefEditing(true)}>{projectBriefs[selectedProject] ? "Edit" : "Add context"}</button>}
+                    {!projectBriefEditing && <button className="quiet-button" onClick={() => setProjectBriefEditing(true)}>{projectBriefs[selectedProject] || projectWorkspaceUris[selectedProject] ? "Edit" : "Add context"}</button>}
                   </div>
                   {projectBriefEditing ? (
                     <>
                       <textarea className="project-brief-input" value={projectBriefDraft} maxLength={4000} onChange={(event) => setProjectBriefDraft(event.target.value)} placeholder="Project goals, decisions, constraints, repository details, and the next milestone…" />
-                      <div className="project-brief-footer"><span>{projectBriefDraft.length}/4000</span><div><button className="quiet-button" onClick={() => { setProjectBriefDraft(projectBriefs[selectedProject] ?? ""); setProjectBriefEditing(false); }}>Cancel</button><button className="primary-small" onClick={() => void saveProjectBrief()}>Save context</button></div></div>
+                      <label className="workspace-uri-label">VS Code folder URI <span>Optional · lets the VS Code Agent draft open in this project</span><input className="workspace-uri-input" value={projectWorkspaceUriDraft} onChange={(event) => setProjectWorkspaceUriDraft(event.target.value)} maxLength={1500} placeholder="file:///C:/Users/you/source/repos/OpenMontage" spellCheck={false} /></label>
+                      <div className="project-brief-footer"><span>{projectBriefDraft.length}/4000</span><div><button className="quiet-button" onClick={() => { setProjectBriefDraft(projectBriefs[selectedProject] ?? ""); setProjectWorkspaceUriDraft(projectWorkspaceUris[selectedProject] ?? ""); setProjectBriefEditing(false); }}>Cancel</button><button className="primary-small" onClick={() => void saveProjectBrief()}>Save context</button></div></div>
                     </>
                   ) : (
-                    <p className={projectBriefs[selectedProject] ? "" : "project-brief-empty"}>{projectBriefs[selectedProject] || "Add the project's goal, constraints, decisions, and current next step once. AI Workspace can carry it into a new provider handoff."}</p>
+                    <>
+                      <p className={projectBriefs[selectedProject] ? "" : "project-brief-empty"}>{projectBriefs[selectedProject] || "Add the project's goal, constraints, decisions, and current next step once. AI Workspace can carry it into another AI or VS Code."}</p>
+                      <div className="workspace-uri-summary">{projectWorkspaceUris[selectedProject] ? <><span className="workspace-linked-dot" /> VS Code linked: <code>{projectWorkspaceUris[selectedProject]}</code></> : <span>No VS Code folder linked. You can still choose the workspace in VS Code when opening an agent draft.</span>}</div>
+                    </>
                   )}
                 </section>
               )}
@@ -1347,7 +1382,7 @@ export function App() {
               <div className="handoff-context-summary"><strong>{handoffProject?.name ?? "Inbox"}</strong><span>{projectBriefs[handoffProjectId]?.trim() ? "Project context included" : "No shared project context saved"}</span><span>{includeHandoffTranscript ? selectedMessages.length + " cached message(s) available; recent excerpt is capped" : "Transcript excluded"}</span></div>
               <details className="handoff-preview-disclosure"><summary>Review exact handoff prompt</summary><pre className="handoff-preview">{handoffPrompt}</pre></details>
             </div>
-            <footer className="handoff-modal-footer"><span>Local preview · editable in Workspace before sending · safe by default</span><button className="primary-small" onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Prepare {getProviderLabel(handoffProvider)} draft</button></footer>
+            <footer className="handoff-modal-footer"><span>Local preview · no prompt is submitted automatically</span><div className="handoff-footer-actions"><button className="secondary-small" onClick={() => void openVSCodeAgentDraft()}><Code2 size={14} /> VS Code Agent</button><button className="primary-small" onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Prepare {getProviderLabel(handoffProvider)} draft</button></div></footer>
           </section>
         </div>
       )}

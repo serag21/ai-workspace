@@ -1,4 +1,5 @@
 import type { AISession, Project, SessionMessage } from "./types";
+import { normalizeWorkspaceFolderUri } from "./handoff";
 
 export const WORKSPACE_BACKUP_FORMAT = "ai-workspace-backup";
 export const WORKSPACE_BACKUP_VERSION = 1;
@@ -13,6 +14,7 @@ export interface WorkspaceBackupStorage {
   dismissedSuggestions?: Record<string, boolean>;
   sessionLabels?: Record<string, string>;
   projectBriefs?: Record<string, string>;
+  projectWorkspaceUris?: Record<string, string>;
   storageSchemaVersion?: number;
 }
 export interface WorkspaceBackup {
@@ -37,6 +39,16 @@ function cleanBooleanMap(value: unknown): Record<string, boolean> {
   const result: Record<string, boolean> = {};
   for (const [key, item] of Object.entries(value)) {
     if (key.length > 0 && key.length <= 500 && typeof item === "boolean") result[key] = item;
+  }
+  return result;
+}
+function cleanWorkspaceUriMap(value: unknown): Record<string, string> {
+  const raw = cleanStringMap(value, 1500);
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const normalized = normalizeWorkspaceFolderUri(value);
+    if (!normalized) throw new Error("Backup contains an invalid local VS Code workspace URI.");
+    result[key] = normalized;
   }
   return result;
 }
@@ -119,7 +131,8 @@ export function parseWorkspaceBackup(value: unknown): WorkspaceBackup {
       projects, sessions, sessionRegistry: registry,
       sessionAssignments: cleanStringMap(rawStorage.sessionAssignments, 200), pinnedSessions: cleanBooleanMap(rawStorage.pinnedSessions),
       sessionMetadata: cleanStringMap(rawStorage.sessionMetadata, 500), dismissedSuggestions: cleanBooleanMap(rawStorage.dismissedSuggestions),
-      sessionLabels: cleanStringMap(rawStorage.sessionLabels, 80), projectBriefs: cleanStringMap(rawStorage.projectBriefs, 4000), storageSchemaVersion: 2,
+      sessionLabels: cleanStringMap(rawStorage.sessionLabels, 80), projectBriefs: cleanStringMap(rawStorage.projectBriefs, 4000),
+      projectWorkspaceUris: cleanWorkspaceUriMap(rawStorage.projectWorkspaceUris), storageSchemaVersion: 2,
     },
     transcripts,
   };

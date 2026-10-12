@@ -1,6 +1,6 @@
 # Local development bridge: VS Code, repositories, and terminal handoff
 
-**Status:** Proposed architecture. Not implemented in the current Chrome extension build.
+**Status:** Phase 1 (native VS Code Agents URL handoff) is implemented in the Chrome extension. A richer companion for live repo/branch/status discovery and terminal coordination remains proposed.
 **Decision:** Keep extension-first. Build and validate browser-session workflows first; prototype this as an optional local companion, not a cloud command-execution service.
 
 ## The job to solve
@@ -21,16 +21,22 @@ This territory is not empty:
 
 Therefore, “we integrate VS Code” is not a sufficient differentiator. The thesis to test is: **existing signed-in browser conversations + one project/session model + a reliable local repo handoff, with no API-key requirement and no automatic command execution**. That combined workflow still needs competitor hands-on testing and user validation.
 
-## Proposed user experience
+## Shipped first step: VS Code Agent draft handoff
 
-1. Open a browser AI session in AI Workspace and click **Send to local project**.
-2. Choose from workspaces currently open in the local VS Code companion, showing project name, repository root, Git branch, and a small dirty/clean indicator. Do not infer the target solely from a similar project name.
+The current extension lets each project store an optional local folder URI such as `file:///C:/Users/you/source/repos/OpenMontage`. From a selected browser conversation, the Handoff dialog can open VS Code's official `vscode://agents/new` URL with the prepared prompt and this folder as the workspace. VS Code keeps it as a draft; the user reviews and submits it there. With no linked folder, the user can choose a workspace in VS Code. The URI is passed only on the user's button click; AI Workspace does not scan local paths or run commands.
+
+See the current [VS Code URL draft documentation](https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls). This lighter integration avoids requiring native messaging registration or a companion installation for the first useful local-code handoff.
+
+## Proposed richer companion experience
+
+1. Open a browser AI session in AI Workspace and click **Handoff → VS Code Agent**. If the project URI is linked, the official URL can preselect the correct folder. Otherwise choose the workspace in VS Code.
+2. For the richer optional companion, offer a verified list of workspaces currently open in VS Code, showing project name, repository root, Git branch, and a small dirty/clean indicator. Do not infer the target solely from a similar project name.
 3. Choose a handoff type:
    - **Instruction for Claude Code/Codex:** prepare the task text for a known local agent terminal/session.
    - **Shell command:** prepare an explicit command to paste into a project terminal.
    - **Open repo:** focus/open the selected VS Code workspace.
 4. Review the handoff preview. Include the source session title/provider, selected project path, optional selected transcript excerpt, user's instruction, and safety constraints.
-5. Click **Prepare in VS Code**. The companion creates or focuses a terminal in the selected workspace and inserts text **without sending Enter**. The user reviews it and presses Enter. For agent composer drafts, leave the task in the input for review before submission.
+5. For the current direct Agent path, VS Code opens an editable New Session draft and the user reviews/submits it there. For a future terminal companion, never insert multiline free-form prompts into a shell (newlines can execute shell input); only use a supported agent composer API or stage a carefully quoted single command with explicit review.
 6. Report the result back in AI Workspace: prepared, cancelled, bridge offline, repo not found, or unsupported action. Never pretend a command ran if it only was staged.
 
 ## Architecture

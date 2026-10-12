@@ -108,3 +108,21 @@ assert.throws(() => parseWorkspaceBackup({
 }), /invalid session record or a URL outside/);
 assert.throws(() => parseWorkspaceBackup({ format: "other", version: 1, storage: { projects: [], sessions: [] }, transcripts: {} }), /not a supported/);
 console.log("Additional tests passed: handoff prompt construction, bounded local context, default provider selection, backup validation, and provider URL allow-listing.");
+
+
+const { buildVSCodeAgentUrl, normalizeWorkspaceFolderUri } = handoffExports;
+assert.equal(normalizeWorkspaceFolderUri("file:///C:/Users/serag/source/repos/OpenMontage"), "file:///C:/Users/serag/source/repos/OpenMontage");
+assert.equal(normalizeWorkspaceFolderUri("https://example.com"), null);
+assert.equal(normalizeWorkspaceFolderUri("file://server/share"), null);
+const vscodeUrl = new URL(buildVSCodeAgentUrl("Investigate the failing tests.", "file:///C:/Users/serag/source/repos/OpenMontage"));
+assert.equal(vscodeUrl.protocol, "vscode:");
+assert.equal(vscodeUrl.pathname, "/new");
+assert.equal(vscodeUrl.searchParams.get("prompt"), "Investigate the failing tests.");
+assert.equal(vscodeUrl.searchParams.get("workspace"), "file:///C:/Users/serag/source/repos/OpenMontage");
+const workspaceFreeUrl = new URL(buildVSCodeAgentUrl("Review this task."));
+assert.equal(workspaceFreeUrl.searchParams.get("workspace"), null);
+assert.throws(() => buildVSCodeAgentUrl("Review task.", "https://example.com"), /folder URI is invalid/);
+const longVscodeUrl = buildVSCodeAgentUrl("é ".repeat(20000) + "\n\n## Handoff rules\nDo not auto-submit.");
+assert.ok(longVscodeUrl.length <= 26000, "VS Code URL should stay under the OS dispatch limit");
+assert.match(new URL(longVscodeUrl).searchParams.get("prompt"), /Handoff rules/);
+console.log("Additional tests passed: VS Code agent URL handoff, local URI allow-list, optional workspace selection, and URL length bounds.");

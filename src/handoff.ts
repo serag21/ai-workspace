@@ -69,3 +69,49 @@ export function buildHandoffPrompt(input: HandoffInput): string {
 export function defaultHandoffProvider(source: Provider): Provider {
   return source === "chatgpt" ? "claude" : "chatgpt";
 }
+
+/** Accept only an explicit local file:// folder URI; never arbitrary schemes or network shares. */
+export function normalizeWorkspaceFolderUri(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const uri = new URL(trimmed);
+    if (uri.protocol !== "file:" || uri.hostname !== "" || uri.username || uri.password ||
+        uri.search || uri.hash || !uri.pathname || uri.pathname === "/") return null;
+    return uri.toString();
+  } catch {
+    return null;
+  }
+}
+
+/** Build the official VS Code Agents URL; opening it creates an unsent draft. */
+export function buildVSCodeAgentUrl(prompt: string, workspaceFolderUri?: string): string {
+  const workspace = workspaceFolderUri ? normalizeWorkspaceFolderUri(workspaceFolderUri) : null;
+  if (workspaceFolderUri?.trim() && !workspace) {
+    throw new Error("The saved VS Code folder URI is invalid. Use a local file:///... folder URI or clear the field.");
+  }
+
+  const makeUrl = (text: string) => {
+    const url = new URL("vscode://agents/new");
+    url.searchParams.set("prompt", text);
+    if (workspace) url.searchParams.set("workspace", workspace);
+    return url.toString();
+  };
+
+  let text = prompt;
+  let result = makeUrl(text);
+  // Keep the final URL under 26k characters so OS URL dispatch remains reliable.
+  // Preserve the handoff rules at the end while trimming the long middle context.
+  while (result.length > 26000 && text.length > 2200) {
+    const keepHead = Math.max(1200, Math.floor(text.length * 0.72) - 500);
+    const keepTail = Math.max(800, Math.floor(text.length * 0.18));
+    text = text.slice(0, keepHead) +
+      "\n\n[Middle context trimmed to fit VS Code's URL limit.]\n\n" +
+      text.slice(-keepTail);
+    result = makeUrl(text);
+  }
+  if (result.length > 26000) {
+    throw new Error("This handoff is too long for a VS Code URL. Reduce the transcript context and try again.");
+  }
+  return result;
+}

@@ -118,3 +118,14 @@ Do not call the extension ready for public release until:
 - [ ] Import the same backup into a profile with existing work; verify merge behavior keeps existing local records on conflicts and doesn't open tabs automatically.
 - [ ] Reject malformed backups, unsupported versions, oversized files, and imported URLs outside ChatGPT/Claude/Gemini.
 - [ ] Verify blank draft tabs are skipped during archive import and handoff prompts are never auto-submitted.
+
+
+## 11. VS Code Agent handoff
+
+- [ ] In a project, save a local VS Code folder URI such as `file:///C:/Users/you/source/repos/OpenMontage`; use a folder URI, not a repo web URL.
+- [ ] Confirm invalid HTTPS/network-share URIs are rejected and an empty URI is allowed.
+- [ ] From a selected provider session, choose **Handoff → VS Code Agent** and verify VS Code opens an Agents new-session draft with the prepared prompt and linked workspace.
+- [ ] Confirm the prompt stays as an unsent draft in VS Code; it is not automatically submitted.
+- [ ] Repeat with no folder URI linked and confirm VS Code opens a draft so you can choose the workspace manually.
+- [ ] Test a very long transcript and a prompt containing spaces, punctuation, and non-ASCII text; verify URL lengths are bounded and the prompt remains useful.
+- [ ] Export/import a backup and verify project folder URI associations follow the right project.

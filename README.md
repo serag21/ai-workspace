@@ -79,4 +79,7 @@ The release-candidate workflow now adds three pieces to the browser-session work
 
 Backups contain sensitive conversation text. Store them somewhere private. Workspace does not upload backups to a cloud service. A handoff draft is not sent automatically; it is only delivered to a provider after you press Send there.
 
-The local VS Code/repository companion remains a separate, unshipped follow-on. The extension does not yet discover local workspaces or control terminals.
+**VS Code Agent handoff is now supported without installing a companion:** associate a project with a local `file:///...` workspace URI, then use the Handoff dialog's VS Code Agent action. It opens VS Code's native Agents new-session draft with the project prompt and chosen workspace, but does not submit it. If no folder is linked, VS Code opens a workspace-free draft so you can pick a folder there. Workspace still does not auto-discover local folders or control coding-agent terminals; richer local repo/terminal awareness remains a possible follow-on.
+
+
+For VS Code Agents, project settings accept a local folder URI such as `file:///C:/Users/you/source/repos/OpenMontage`. The URI is stored in Chrome local storage and included in local backups. Workspace accepts only local `file:` folder URIs for this setting; it does not browse the file system or accept network-share/remote URLs.
