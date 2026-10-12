@@ -763,11 +763,15 @@ export function App() {
       const nextSessions = [...sessionMap.values()];
 
       const remapProjectMap = (source: Record<string, string> | undefined) => Object.fromEntries(
-        Object.entries(source ?? {}).filter(([id]) => !id.includes(":draft:")).map(([id, value]) => [id, projectIdMap[value] ?? value]),
+        Object.entries(source ?? {}).filter(([id]) => !id.includes(":draft:")).map(([id, value]) => [
+          id,
+          projectIdMap[value] ?? (mergedProjects.some((project) => project.id === value) ? value : "inbox"),
+        ]),
       );
       const mergeRecord = <T,>(incoming: Record<string, T> | undefined, existing: Record<string, T> | undefined): Record<string, T> => ({ ...(incoming ?? {}), ...(existing ?? {}) });
       const incomingBriefs = Object.fromEntries(Object.entries(backup.storage.projectBriefs ?? {})
-        .map(([id, value]) => [projectIdMap[id] ?? id, value]));
+        .filter(([id]) => Boolean(projectIdMap[id]))
+        .map(([id, value]) => [projectIdMap[id], value]));
       const incomingRegistry = Object.fromEntries(Object.entries(backup.storage.sessionRegistry ?? {})
         .filter(([id]) => !id.includes(":draft:"))
         .map(([id, session]) => [id, remapArchivedSession(session)]));

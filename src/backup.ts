@@ -34,7 +34,11 @@ function cleanStringMap(value: unknown, maxValueLength = 500): Record<string, st
 }
 function cleanBooleanMap(value: unknown): Record<string, boolean> {
   if (!isRecord(value)) return {};
-  return Object.fromEntries(Object.entries(value).filter(([key, item]) => key.length > 0 && key.length <= 500 && typeof item === "boolean"));
+  const result: Record<string, boolean> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (key.length > 0 && key.length <= 500 && typeof item === "boolean") result[key] = item;
+  }
+  return result;
 }
 function safeProviderUrl(provider: string, value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -94,10 +98,12 @@ export function parseWorkspaceBackup(value: unknown): WorkspaceBackup {
     throw new Error("This is not a supported AI Workspace backup (expected format version 1).");
   }
   const rawStorage = value.storage;
-  const projects = rawStorage.projects.map(cleanProject);
-  if (!projects.some((project) => project.id === "inbox")) projects.unshift({ id: "inbox", name: "Inbox", color: "#8b5cf6" });
-  if (new Set(projects.map((project) => project.id)).size !== projects.length) throw new Error("Backup contains duplicate project IDs.");
-  const sessions = rawStorage.sessions.map(cleanSession);
+  const rawProjects = rawStorage.projects as unknown[];
+  const rawSessions = rawStorage.sessions as unknown[];
+  const projects: Project[] = rawProjects.map(cleanProject);
+  if (!projects.some((project: Project) => project.id === "inbox")) projects.unshift({ id: "inbox", name: "Inbox", color: "#8b5cf6" });
+  if (new Set(projects.map((project: Project) => project.id)).size !== projects.length) throw new Error("Backup contains duplicate project IDs.");
+  const sessions: AISession[] = rawSessions.map(cleanSession);
   const registry: Record<string, AISession> = {};
   if (rawStorage.sessionRegistry !== undefined) {
     if (!isRecord(rawStorage.sessionRegistry)) throw new Error("Backup contains an invalid session registry.");
