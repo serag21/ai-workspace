@@ -129,3 +129,6 @@ Do not call the extension ready for public release until:
 - [ ] Repeat with no folder URI linked and confirm VS Code opens a draft so you can choose the workspace manually.
 - [ ] Test a very long transcript and a prompt containing spaces, punctuation, and non-ASCII text; verify URL lengths are bounded and the prompt remains useful.
 - [ ] Export/import a backup and verify project folder URI associations follow the right project.
+
+- [ ] Where related work is suggested, verify up to three related thread excerpts can be included, each remains labeled by title/provider, and turning the option off excludes those threads.
+- [ ] Verify the handoff actions remain disabled while related transcripts are being loaded, so the user cannot accidentally send an incomplete context packet.

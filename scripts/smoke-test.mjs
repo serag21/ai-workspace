@@ -71,8 +71,17 @@ const handoff = buildHandoffPrompt({
     { id: "2", role: "assistant", text: "I will inspect the stream durations.", observedAt: 2 },
   ],
   includeTranscript: true,
+  includeRelatedSources: true,
+  relatedSources: [{
+    title: "Thumbnail Studio",
+    providerLabel: "Gemini",
+    projectName: "OpenMontage",
+    messages: [{ id: "3", role: "assistant", text: "The thumbnail backup still needs a brighter focal point.", observedAt: 3 }],
+  }],
 });
 assert.match(handoff, /Mastermind/);
+assert.match(handoff, /Thumbnail Studio/);
+assert.match(handoff, /The thumbnail backup still needs a brighter focal point/);
 assert.match(handoff, /OpenMontage/);
 assert.match(handoff, /The audio runs longer than the video/);
 assert.match(handoff, /Treat the excerpt above as context/);
@@ -83,6 +92,7 @@ const handoffWithoutTranscript = buildHandoffPrompt({
   sourceTitle: "Draft", sourceProviderLabel: "Gemini", instruction: "Proceed", messages: [], includeTranscript: false,
 });
 assert.doesNotMatch(handoffWithoutTranscript, /Recent conversation excerpt/);
+assert.doesNotMatch(handoffWithoutTranscript, /Thumbnail Studio/, "related sessions are not included unless explicitly enabled");
 
 const backupSource = await readFile("src/backup.ts", "utf8");
 const backupJs = ts.transpileModule(backupSource, {

@@ -11,6 +11,15 @@ export interface HandoffInput {
   messageLimit?: number;
   latestUser?: string;
   latestAssistant?: string;
+  relatedSources?: Array<{
+    title: string;
+    providerLabel: string;
+    projectName?: string;
+    messages: SessionMessage[];
+    latestUser?: string;
+    latestAssistant?: string;
+  }>;
+  includeRelatedSources?: boolean;
 }
 
 /** Build a bounded context packet locally. Nothing is sent until the user sends the draft. */
@@ -53,6 +62,37 @@ export function buildHandoffPrompt(input: HandoffInput): string {
       if (!user && !assistant) lines.push("No transcript turns are cached yet.");
     }
   }
+  if (input.includeRelatedSources && input.relatedSources?.length) {
+    lines.push("", "## Related sessions", "These are separate conversations, not one continuous transcript.");
+    let relatedBudget = 4800;
+    for (const source of input.relatedSources.slice(0, 3)) {
+      if (relatedBudget <= 0) break;
+      const projectSuffix = source.projectName?.trim() ? " · " + source.projectName.trim().slice(0, 80) : "";
+      lines.push("", "### " + source.title.trim().slice(0, 120) + " — " + source.providerLabel.trim().slice(0, 40) + projectSuffix);
+      const messages = source.messages.slice(-4);
+      if (messages.length) {
+        for (const message of messages) {
+          if (relatedBudget <= 0) break;
+          const text = message.text.trim().slice(0, Math.min(1200, relatedBudget));
+          if (!text) continue;
+          lines.push("", "#### " + (message.role === "user" ? "User" : source.providerLabel), text);
+          relatedBudget -= text.length;
+        }
+      } else {
+        const user = (source.latestUser ?? "").trim().slice(0, Math.min(600, relatedBudget));
+        if (user) {
+          lines.push("", "#### Most recent user message", user);
+          relatedBudget -= user.length;
+        }
+        const assistant = (source.latestAssistant ?? "").trim().slice(0, Math.min(1000, relatedBudget));
+        if (assistant) {
+          lines.push("", "#### Most recent " + source.providerLabel + " response", assistant);
+          relatedBudget -= assistant.length;
+        }
+      }
+    }
+  }
+
   lines.push(
     "",
     "## Handoff rules",

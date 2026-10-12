@@ -211,6 +211,9 @@ export function App() {
   const [handoffInstruction, setHandoffInstruction] = useState("Continue from the context below. Briefly confirm your understanding, then take the next concrete step. Ask only if a missing detail blocks progress.");
   const [includeHandoffTranscript, setIncludeHandoffTranscript] = useState(true);
   const [handoffMessageLimit, setHandoffMessageLimit] = useState(12);
+  const [includeRelatedHandoffSessions, setIncludeRelatedHandoffSessions] = useState(false);
+  const [handoffRelatedMessages, setHandoffRelatedMessages] = useState<Record<string, SessionMessage[]>>({});
+  const [handoffRelatedLoading, setHandoffRelatedLoading] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
   const refreshTimer = useRef<number | null>(null);
@@ -652,7 +655,16 @@ export function App() {
     messageLimit: handoffMessageLimit,
     latestUser: selectedSession.latestUser,
     latestAssistant: selectedSession.latestAssistant,
-  }) : "", [selectedSession, handoffProject?.name, handoffProjectId, projectBriefs, handoffInstruction, selectedMessages, includeHandoffTranscript, handoffMessageLimit]);
+    relatedSources: relatedSessions.map(({ session }) => ({
+      title: sessionDisplayTitle(session),
+      providerLabel: getProviderLabel(session.provider),
+      projectName: projects.find((project) => project.id === session.projectId)?.name,
+      messages: handoffRelatedMessages[session.id] ?? [],
+      latestUser: session.latestUser,
+      latestAssistant: session.latestAssistant,
+    })),
+    includeRelatedSources: includeRelatedHandoffSessions,
+  }) : "", [selectedSession, handoffProject?.name, handoffProjectId, projectBriefs, handoffInstruction, selectedMessages, includeHandoffTranscript, handoffMessageLimit, relatedSessions, projects, handoffRelatedMessages, includeRelatedHandoffSessions]);
 
   useEffect(() => {
     setProjectBriefDraft(projectBriefs[selectedProject] ?? "");
@@ -686,7 +698,21 @@ export function App() {
     setHandoffInstruction("Continue from the context below. Briefly confirm your understanding, then take the next concrete step. Ask only if a missing detail blocks progress.");
     setIncludeHandoffTranscript(true);
     setHandoffMessageLimit(12);
+    setIncludeRelatedHandoffSessions(relatedSessions.length > 0);
+    setHandoffRelatedMessages({});
+    setHandoffRelatedLoading(relatedSessions.length > 0);
     setHandoffOpen(true);
+    const candidates = relatedSessions.slice(0, 3);
+    if (candidates.length) {
+      void Promise.all(candidates.map(async ({ session }) => {
+        try {
+          return [session.id, await getSessionMessages(session.id)] as const;
+        } catch {
+          return [session.id, [] as SessionMessage[]] as const;
+        }
+      })).then((entries) => setHandoffRelatedMessages(Object.fromEntries(entries)))
+        .finally(() => setHandoffRelatedLoading(false));
+    }
   }
 
   async function openVSCodeAgentDraft() {
@@ -1379,10 +1405,11 @@ export function App() {
               <label>What should it do next?<textarea value={handoffInstruction} maxLength={3000} onChange={(event) => setHandoffInstruction(event.target.value)} rows={3} placeholder="Describe the next step for the destination AI…" /></label>
               <label className="handoff-check"><input type="checkbox" checked={includeHandoffTranscript} onChange={(event) => setIncludeHandoffTranscript(event.target.checked)} /> Include recent cached conversation turns</label>
               {includeHandoffTranscript && <label>How much recent context?<select value={handoffMessageLimit} onChange={(event) => setHandoffMessageLimit(Number(event.target.value))}><option value={6}>Last 6 messages</option><option value={12}>Last 12 messages</option><option value={20}>Last 20 messages</option></select></label>}
-              <div className="handoff-context-summary"><strong>{handoffProject?.name ?? "Inbox"}</strong><span>{projectBriefs[handoffProjectId]?.trim() ? "Project context included" : "No shared project context saved"}</span><span>{includeHandoffTranscript ? selectedMessages.length + " cached message(s) available; recent excerpt is capped" : "Transcript excluded"}</span></div>
+              {relatedSessions.length > 0 && <label className="handoff-check"><input type="checkbox" checked={includeRelatedHandoffSessions} onChange={(event) => setIncludeRelatedHandoffSessions(event.target.checked)} /> Include up to {Math.min(3, relatedSessions.length)} related session(s)</label>}
+              <div className="handoff-context-summary"><strong>{handoffProject?.name ?? "Inbox"}</strong><span>{projectBriefs[handoffProjectId]?.trim() ? "Project context included" : "No shared project context saved"}</span><span>{includeHandoffTranscript ? selectedMessages.length + " cached message(s) available; recent excerpt is capped" : "Transcript excluded"}</span>{includeRelatedHandoffSessions && <span>{handoffRelatedLoading ? "Loading related context…" : Math.min(3, relatedSessions.length) + " related thread(s) included"}</span>}</div>
               <details className="handoff-preview-disclosure"><summary>Review exact handoff prompt</summary><pre className="handoff-preview">{handoffPrompt}</pre></details>
             </div>
-            <footer className="handoff-modal-footer"><span>Local preview · no prompt is submitted automatically</span><div className="handoff-footer-actions"><button className="secondary-small" onClick={() => void openVSCodeAgentDraft()}><Code2 size={14} /> VS Code Agent</button><button className="primary-small" onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Prepare {getProviderLabel(handoffProvider)} draft</button></div></footer>
+            <footer className="handoff-modal-footer"><span>Local preview · no prompt is submitted automatically</span><div className="handoff-footer-actions"><button className="secondary-small" disabled={includeRelatedHandoffSessions && handoffRelatedLoading} onClick={() => void openVSCodeAgentDraft()}><Code2 size={14} /> VS Code Agent</button><button className="primary-small" disabled={includeRelatedHandoffSessions && handoffRelatedLoading} onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Prepare {getProviderLabel(handoffProvider)} draft</button></div></footer>
           </section>
         </div>
       )}
