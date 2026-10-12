@@ -60,7 +60,7 @@ const handoffJs = ts.transpileModule(handoffSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, strict: true },
 }).outputText;
 const handoffExports = {};
-vm.runInNewContext(handoffJs, { exports: handoffExports, module: { exports: handoffExports } }, { filename: "src/handoff.ts" });
+vm.runInNewContext(handoffJs, { exports: handoffExports, module: { exports: handoffExports }, URL }, { filename: "src/handoff.ts" });
 const { buildHandoffPrompt, defaultHandoffProvider } = handoffExports;
 const handoff = buildHandoffPrompt({
   sourceTitle: "Mastermind", sourceProviderLabel: "ChatGPT", projectName: "OpenMontage",
