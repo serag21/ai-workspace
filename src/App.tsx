@@ -794,11 +794,12 @@ export function App() {
     const candidateTabId = session.tabId ?? await ensureSessionTab(session);
     if (candidateTabId === null) throw new Error("Could not reopen the source conversation.");
     const targetTabId: number = candidateTabId;
-    async function send() {
-      return chrome.tabs.sendMessage<{ ok?: boolean; error?: string }>(
+    async function send(): Promise<{ ok?: boolean; error?: string }> {
+      const rawResponse: unknown = await chrome.tabs.sendMessage(
         targetTabId,
         { type: "ai-workspace:send-prompt", text: prompt },
       );
+      return rawResponse as { ok?: boolean; error?: string } | undefined ?? {};
     }
     let response: { ok?: boolean; error?: string } | undefined;
     try { response = await send(); }
