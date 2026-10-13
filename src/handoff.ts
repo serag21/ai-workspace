@@ -165,3 +165,20 @@ export function buildVSCodeAgentUrl(prompt: string, workspaceFolderUri?: string)
   }
   return result;
 }
+
+
+/** Extract only a complete source-AI summary bounded by the markers we explicitly requested. */
+export function extractHandoffSummaryReply(reply: string): string {
+  const beginMarker = "BEGIN_AI_WORKSPACE_HANDOFF";
+  const endMarker = "END_AI_WORKSPACE_HANDOFF";
+  const begin = reply.indexOf(beginMarker);
+  const end = reply.lastIndexOf(endMarker);
+  if (begin < 0 || end <= begin) {
+    throw new Error("The source AI response is missing the handoff boundary markers. It may be incomplete or formatted unexpectedly; review it in the original provider and retry, or use the fast text-excerpt handoff.");
+  }
+  const summary = reply.slice(begin + beginMarker.length, end).trim();
+  if (summary.length < 300) {
+    throw new Error("The captured source-AI handoff is unusually short. Verify it in the original provider before using it.");
+  }
+  return summary;
+}

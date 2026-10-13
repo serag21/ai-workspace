@@ -61,7 +61,7 @@ const handoffJs = ts.transpileModule(handoffSource, {
 }).outputText;
 const handoffExports = {};
 vm.runInNewContext(handoffJs, { exports: handoffExports, module: { exports: handoffExports }, URL }, { filename: "src/handoff.ts" });
-const { buildHandoffPrompt, defaultHandoffProvider } = handoffExports;
+const { buildHandoffPrompt, defaultHandoffProvider, extractHandoffSummaryReply } = handoffExports;
 const handoff = buildHandoffPrompt({
   sourceTitle: "Mastermind", sourceProviderLabel: "ChatGPT", projectName: "OpenMontage",
   projectBrief: "Keep the original narration and improve visual beat coverage.",
@@ -163,3 +163,10 @@ assert.match(handoffWithSourceSummary, /handoff summary prepared by the source A
 assert.match(handoffWithSourceSummary, /two unverified edge cases/);
 assert.doesNotMatch(handoffWithSourceSummary, /stale partial text from several turns ago/);
 console.log("Additional tests passed: late-DOM transcript capture retry, selector fallback, bridge upgrade, and source-AI summaries replacing scraped excerpts.");
+
+
+const validSourceReply = "BEGIN_AI_WORKSPACE_HANDOFF\n" + "Verified handoff detail. ".repeat(20) + "\nEND_AI_WORKSPACE_HANDOFF";
+assert.match(extractHandoffSummaryReply(validSourceReply), /Verified handoff detail/);
+assert.throws(() => extractHandoffSummaryReply("BEGIN_AI_WORKSPACE_HANDOFF\n" + "partial response ".repeat(30)), /missing the handoff boundary markers/);
+assert.throws(() => extractHandoffSummaryReply("BEGIN_AI_WORKSPACE_HANDOFF\nshort\nEND_AI_WORKSPACE_HANDOFF"), /unusually short/);
+console.log("Additional tests passed: source summary requires complete boundary markers and sufficient content.");

@@ -4,7 +4,7 @@ import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSna
 import { getProvider, getProviderLabel, getSessionId, isNewChatRoute } from "./providers";
 import type { AISession, Project, Provider, SessionMessage, SessionStatus } from "./types";
 import { exportAllSessionMessages, getSessionMessages, migrateSessionMessages, saveSessionMessages, searchSessionIds } from "./sessionDb";
-import { buildHandoffPrompt, buildVSCodeAgentUrl, defaultHandoffProvider, normalizeWorkspaceFolderUri } from "./handoff";
+import { buildHandoffPrompt, buildVSCodeAgentUrl, defaultHandoffProvider, extractHandoffSummaryReply, normalizeWorkspaceFolderUri } from "./handoff";
 import { parseWorkspaceBackup } from "./backup";
 
 const seedProjects: Project[] = [{ id: "inbox", name: "Inbox", color: "#8b5cf6" }];
@@ -867,12 +867,7 @@ export function App() {
         if (snapshot.messages[i].role === "assistant") { latestAssistant = snapshot.messages[i]; break; }
       }
       if (!latestAssistant) throw new Error("The source AI's handoff response has not been captured yet.");
-      const begin = latestAssistant.text.indexOf("BEGIN_AI_WORKSPACE_HANDOFF");
-      const end = latestAssistant.text.lastIndexOf("END_AI_WORKSPACE_HANDOFF");
-      const summary = begin >= 0 && end > begin
-        ? latestAssistant.text.slice(begin + "BEGIN_AI_WORKSPACE_HANDOFF".length, end).trim()
-        : latestAssistant.text.trim();
-      if (summary.length < 300) throw new Error("The captured handoff response is unusually short. Verify it in the original provider before using it.");
+      const summary = extractHandoffSummaryReply(latestAssistant.text);
       await persistFreshSnapshot(selectedSession, snapshot);
       setHandoffSummaryState((current) => current ? { ...current, status: "ready", summary } : current);
       setIncludeHandoffTranscript(false);
