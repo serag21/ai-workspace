@@ -11,6 +11,8 @@ export interface HandoffInput {
   messageLimit?: number;
   latestUser?: string;
   latestAssistant?: string;
+  /** Optional summary explicitly generated inside the original provider conversation. */
+  sourceSummary?: string;
   relatedSources?: Array<{
     title: string;
     providerLabel: string;
@@ -37,7 +39,15 @@ export function buildHandoffPrompt(input: HandoffInput): string {
   ];
   if (input.projectName?.trim()) lines.push("Project: " + input.projectName.trim().slice(0, 100));
   if (input.projectBrief?.trim()) lines.push("", "## Shared project context", input.projectBrief.trim().slice(0, 4000));
-  if (input.includeTranscript) {
+  if (input.sourceSummary?.trim()) {
+    lines.push(
+      "",
+      "## Handoff summary prepared by the source AI",
+      "The following summary was explicitly generated inside the original provider conversation. It replaces the scraped transcript excerpt; it is not a transcript of the full native UI.",
+      "",
+      input.sourceSummary.trim().slice(0, 10500),
+    );
+  } else if (input.includeTranscript) {
     const limit = Math.max(1, Math.min(20, Math.floor(input.messageLimit ?? 12)));
     const recent = input.messages.slice(-limit);
     const included: SessionMessage[] = [];

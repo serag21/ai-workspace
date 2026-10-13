@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowLeft, ArrowRightLeft, CheckCircle2, CircleAlert, Code2, Download, ExternalLink, FolderPlus, Inbox, LayoutGrid, Lightbulb, MessageSquarePlus, Pin, Pencil, Search, Trash2, Upload, X } from "lucide-react";
+import { Activity, ArrowLeft, ArrowRightLeft, CheckCircle2, CircleAlert, Code2, Download, ExternalLink, FileText, FolderPlus, Inbox, LayoutGrid, Lightbulb, MessageSquarePlus, Pin, Pencil, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { discoverOpenSessions, ensureSessionTab, focusSession, requestSessionSnapshot, waitForTabComplete } from "./chrome";
 import { getProvider, getProviderLabel, getSessionId, isNewChatRoute } from "./providers";
 import type { AISession, Project, Provider, SessionMessage, SessionStatus } from "./types";
@@ -25,6 +25,14 @@ interface ProjectSuggestion {
   name: string;
   sessionIds: string[];
   sampleTitles: string[];
+}
+
+interface HandoffSummaryState {
+  sourceSessionId: string;
+  status: "asking" | "waiting" | "ready";
+  requestText: string;
+  priorAssistant: string;
+  summary?: string;
 }
 
 const PROJECT_PATTERNS: Array<{ key: string; name: string; match: RegExp }> = [
@@ -156,6 +164,7 @@ function relatedScore(source: AISession, candidate: AISession) {
 
   return {
     score,
+    sharedTitleCount: sharedTitle.length,
     sharedCount: new Set([...sharedTitle, ...sharedContext, ...sharedAcross]).size,
     reason: source.projectId && source.projectId !== "inbox" && source.projectId === candidate.projectId
       ? "Same project"
@@ -167,10 +176,15 @@ function relatedScore(source: AISession, candidate: AISession) {
 
 function buildRelatedSessions(source: AISession | null, sessions: AISession[]) {
   if (!source) return [];
+  const hasExplicitProject = Boolean(source.projectId && source.projectId !== "inbox");
   return sessions
     .filter((session) => session.id !== source.id)
+    // Do not pull text-similar conversations in from another explicitly named project.
+    .filter((session) => !hasExplicitProject || session.projectId === source.projectId)
     .map((session) => ({ session, ...relatedScore(source, session) }))
-    .filter((item) => item.sharedCount >= 2 && item.score >= 4)
+    .filter((item) => hasExplicitProject
+      ? item.sharedCount >= 1
+      : item.sharedTitleCount >= 1 && item.sharedCount >= 2 && item.score >= 6)
     .sort((a, b) => b.score - a.score || Number(b.session.lifecycle === "open") - Number(a.session.lifecycle === "open"))
     .slice(0, 3);
 }
@@ -199,6 +213,8 @@ export function App() {
   const [closingTabs, setClosingTabs] = useState(false);
   const [closeProgress, setCloseProgress] = useState<string | null>(null);
   const [selectedMessages, setSelectedMessages] = useState<SessionMessage[]>([]);
+  const [selectedCaptureSource, setSelectedCaptureSource] = useState<"live" | "cached" | "none">("none");
+  const [captureRefreshing, setCaptureRefreshing] = useState(false);
   const [transcriptMatches, setTranscriptMatches] = useState<Set<string>>(new Set());
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<string, boolean>>({});
   const [projectBriefs, setProjectBriefs] = useState<Record<string, string>>({});
@@ -214,6 +230,7 @@ export function App() {
   const [includeRelatedHandoffSessions, setIncludeRelatedHandoffSessions] = useState(false);
   const [handoffRelatedMessages, setHandoffRelatedMessages] = useState<Record<string, SessionMessage[]>>({});
   const [handoffRelatedLoading, setHandoffRelatedLoading] = useState(false);
+  const [handoffSummaryState, setHandoffSummaryState] = useState<HandoffSummaryState | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
   const refreshTimer = useRef<number | null>(null);
@@ -307,6 +324,59 @@ export function App() {
   function scheduleRefresh() {
     if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
     refreshTimer.current = window.setTimeout(() => { void refresh(); }, 250);
+  }
+
+  async function requestFreshSessionSnapshot(session: AISession) {
+    if (session.tabId === null || session.lifecycle !== "open") return null;
+    let snapshot = await requestSessionSnapshot(session.tabId);
+    if (!snapshot?.messages.length) {
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: session.tabId }, files: ["content.js"] });
+        await new Promise((resolve) => window.setTimeout(resolve, 450));
+        snapshot = await requestSessionSnapshot(session.tabId);
+      } catch {
+        // The tab may be discarded, navigating, or blocked from script injection.
+      }
+    }
+    return snapshot;
+  }
+
+  async function persistFreshSnapshot(session: AISession, snapshot: NonNullable<Awaited<ReturnType<typeof requestFreshSessionSnapshot>>>) {
+    if (snapshot.messages.length) await saveSessionMessages(session.id, snapshot.messages);
+    setSessions((current) => current.map((item) => item.id === session.id ? {
+      ...item,
+      title: snapshot.title?.trim() || item.title,
+      status: snapshot.status,
+      latestUser: snapshot.latestUser.slice(0, 500) || item.latestUser,
+      latestAssistant: snapshot.latestAssistant.slice(0, 800) || item.latestAssistant,
+      snapshotAt: snapshot.timestamp,
+      lastActivityAt: snapshot.timestamp,
+    } : item));
+    if (selectedSessionId === session.id && snapshot.messages.length) {
+      setSelectedMessages(snapshot.messages);
+      setSelectedCaptureSource("live");
+    }
+  }
+
+  async function refreshSelectedCapture() {
+    if (!selectedSession) return;
+    if (selectedSession.tabId === null) {
+      window.alert("This session has no open provider tab. Open it first, then refresh its text snapshot.");
+      return;
+    }
+    setCaptureRefreshing(true);
+    try {
+      const snapshot = await requestFreshSessionSnapshot(selectedSession);
+      if (!snapshot?.messages.length) {
+        setSelectedCaptureSource(selectedMessages.length ? "cached" : "none");
+        throw new Error("No readable conversation turns were found in the provider page. The original conversation is still intact; use Open in Chrome to view its complete native content.");
+      }
+      await persistFreshSnapshot(selectedSession, snapshot);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not refresh this conversation's text snapshot.");
+    } finally {
+      setCaptureRefreshing(false);
+    }
   }
 
   async function createNewChat(options: { provider?: Provider; projectId?: string; initialPrompt?: string } = {}) {
@@ -553,31 +623,25 @@ export function App() {
       if (!selectedSessionId || !selectedSession) return;
 
       let fresh: SessionMessage[] = [];
-      let freshSnapshot: Awaited<ReturnType<typeof requestSessionSnapshot>> = null;
+      let freshSnapshot: Awaited<ReturnType<typeof requestFreshSessionSnapshot>> = null;
 
       if (selectedSession.lifecycle === "open" && selectedSession.tabId !== null) {
-        freshSnapshot = await requestSessionSnapshot(selectedSession.tabId);
+        freshSnapshot = await requestFreshSessionSnapshot(selectedSession);
         fresh = freshSnapshot?.messages ?? [];
       }
 
-      if (fresh.length > 0) {
+      if (fresh.length > 0 && freshSnapshot) {
         await saveSessionMessages(selectedSession.id, fresh);
-        if (!cancelled && freshSnapshot) {
-          setSessions((current) => current.map((session) => session.id === selectedSession.id ? {
-            ...session,
-            title: freshSnapshot!.title.trim() || session.title,
-            status: freshSnapshot!.status,
-            latestUser: freshSnapshot!.latestUser.slice(0, 500) || session.latestUser,
-            latestAssistant: freshSnapshot!.latestAssistant.slice(0, 800) || session.latestAssistant,
-            snapshotAt: freshSnapshot!.timestamp,
-          } : session));
-        }
+        if (!cancelled) await persistFreshSnapshot(selectedSession, freshSnapshot);
       }
 
       const cached = await getSessionMessages(selectedSession.id);
       const next = fresh.length > 0 ? fresh : cached;
 
-      if (!cancelled) setSelectedMessages(next);
+      if (!cancelled) {
+        setSelectedMessages(next);
+        setSelectedCaptureSource(fresh.length > 0 ? "live" : cached.length > 0 ? "cached" : "none");
+      }
     }
 
     void loadSelectedConversation().catch(() => {
@@ -655,6 +719,7 @@ export function App() {
     messageLimit: handoffMessageLimit,
     latestUser: selectedSession.latestUser,
     latestAssistant: selectedSession.latestAssistant,
+    sourceSummary: handoffSummaryState?.sourceSessionId === selectedSession.id && handoffSummaryState.status === "ready" ? handoffSummaryState.summary : undefined,
     relatedSources: relatedSessions.map(({ session }) => ({
       title: sessionDisplayTitle(session),
       providerLabel: getProviderLabel(session.provider),
@@ -664,7 +729,7 @@ export function App() {
       latestAssistant: session.latestAssistant,
     })),
     includeRelatedSources: includeRelatedHandoffSessions,
-  }) : "", [selectedSession, handoffProject?.name, handoffProjectId, projectBriefs, handoffInstruction, selectedMessages, includeHandoffTranscript, handoffMessageLimit, relatedSessions, projects, handoffRelatedMessages, includeRelatedHandoffSessions]);
+  }) : "", [selectedSession, handoffProject?.name, handoffProjectId, projectBriefs, handoffInstruction, selectedMessages, includeHandoffTranscript, handoffMessageLimit, relatedSessions, projects, handoffRelatedMessages, includeRelatedHandoffSessions, handoffSummaryState]);
 
   useEffect(() => {
     setProjectBriefDraft(projectBriefs[selectedProject] ?? "");
@@ -695,25 +760,122 @@ export function App() {
   function openHandoff() {
     if (!selectedSession) return;
     setHandoffProvider(defaultHandoffProvider(selectedSession.provider));
-    setHandoffInstruction("Continue from the context below. Briefly confirm your understanding, then take the next concrete step. Ask only if a missing detail blocks progress.");
+    setHandoffInstruction("Continue this specific project from the source context. Identify the next concrete step, preserve existing decisions, and ask only if a missing detail blocks progress.");
     setIncludeHandoffTranscript(true);
     setHandoffMessageLimit(12);
-    setIncludeRelatedHandoffSessions(relatedSessions.length > 0);
+    // Related threads are never injected automatically. The user must opt in.
+    setIncludeRelatedHandoffSessions(false);
     setHandoffRelatedMessages({});
-    setHandoffRelatedLoading(relatedSessions.length > 0);
+    setHandoffRelatedLoading(false);
+    setHandoffSummaryState(null);
     setHandoffOpen(true);
-    const candidates = relatedSessions.slice(0, 3);
-    if (candidates.length) {
-      void Promise.all(candidates.map(async ({ session }) => {
-        try {
-          return [session.id, await getSessionMessages(session.id)] as const;
-        } catch {
-          return [session.id, [] as SessionMessage[]] as const;
-        }
-      })).then((entries) => setHandoffRelatedMessages(Object.fromEntries(entries)))
-        .finally(() => setHandoffRelatedLoading(false));
-    }
   }
+
+  async function setRelatedHandoffContext(enabled: boolean) {
+    setIncludeRelatedHandoffSessions(enabled);
+    if (!enabled) return;
+    const candidates = relatedSessions.slice(0, 3);
+    if (!candidates.length) return;
+    setHandoffRelatedLoading(true);
+    try {
+      const entries = await Promise.all(candidates.map(async ({ session }) => {
+        try { return [session.id, await getSessionMessages(session.id)] as const; }
+        catch { return [session.id, [] as SessionMessage[]] as const; }
+      }));
+      setHandoffRelatedMessages(Object.fromEntries(entries));
+    } finally { setHandoffRelatedLoading(false); }
+  }
+
+  const HANDOFF_REQUEST_MARKER = "AI_WORKSPACE_HANDOFF_REQUEST";
+
+  async function deliverPromptToSession(session: AISession, text: string): Promise<void> {
+    const prompt = text.trim();
+    if (!prompt) throw new Error("Prompt is empty.");
+    const tabId = session.tabId ?? await ensureSessionTab(session);
+    if (tabId === null) throw new Error("Could not reopen the source conversation.");
+    async function send() { return chrome.tabs.sendMessage(tabId, { type: "ai-workspace:send-prompt", text: prompt }); }
+    let response: { ok?: boolean; error?: string } | undefined;
+    try { response = await send(); }
+    catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const bridgeMissing = /receiving end does not exist|could not establish connection/i.test(message);
+      if (!bridgeMissing) throw new Error("Could not confirm that the prompt was delivered. Open the provider tab to verify before trying again.");
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+        await new Promise((resolve) => window.setTimeout(resolve, 450));
+        response = await send();
+      } catch { throw new Error("The provider bridge was unavailable. Open the provider tab and try again."); }
+    }
+    if (!response?.ok) throw new Error(response?.error || "The provider did not accept the prompt. Nothing was retried automatically.");
+    let targetWindowId = session.windowId;
+    try { targetWindowId = (await chrome.tabs.get(tabId)).windowId; } catch {}
+    setSessions((current) => current.map((item) => item.id === session.id
+      ? { ...item, status: "working", lifecycle: "open", tabId, windowId: targetWindowId, latestUser: prompt.slice(0, 500) }
+      : item));
+  }
+
+  async function askSourceForHandoffSummary() {
+    if (!selectedSession || sending) return;
+    if (!window.confirm("This will add one message to the ORIGINAL " + getProviderLabel(selectedSession.provider) + " conversation asking that AI to summarize its full available context, plans, decisions, artifacts, and next steps. The source conversation will be changed by that message. Nothing is sent to the destination AI yet. Continue?")) return;
+    const requestText = [
+      "[" + HANDOFF_REQUEST_MARKER + "]",
+      "Prepare a complete, self-contained handoff summary of THIS conversation for a different AI assistant that has not seen it.",
+      "Use the full conversation context available to you, not just the latest prompt or last few turns. Include relevant plans, artifact/specification content, and important decisions from earlier in this same thread where still applicable.",
+      "Only summarize this conversation. Do not import unrelated projects or conversations. Do not invent paths, tests, completed work, or facts you cannot verify from the conversation.",
+      "", "Use these headings:",
+      "1. Goal and intended outcome",
+      "2. Current state and what is actually verified",
+      "3. Important decisions, constraints, and requirements to preserve",
+      "4. Relevant files, paths, artifacts, plans, prompts, and exact technical details",
+      "5. Remaining issues, blockers, and uncertainties",
+      "6. Ordered next steps",
+      "7. Things the next AI must not redo or break",
+      "", "Preserve exact names, paths, configuration values, and unresolved questions where known. Flag uncertainties. Keep enough detail that another AI can continue without asking the user to re-explain the project. Do not execute anything; only write the handoff.",
+      "Wrap the full summary between these exact lines:", "BEGIN_AI_WORKSPACE_HANDOFF", "END_AI_WORKSPACE_HANDOFF",
+    ].join("\n");
+    setSending(true);
+    setHandoffSummaryState({ sourceSessionId: selectedSession.id, status: "asking", requestText, priorAssistant: selectedSession.latestAssistant ?? "" });
+    setIncludeHandoffTranscript(false);
+    setIncludeRelatedHandoffSessions(false);
+    try {
+      await deliverPromptToSession(selectedSession, requestText);
+      setHandoffSummaryState((current) => current ? { ...current, status: "waiting" } : current);
+    } catch (error) {
+      setHandoffSummaryState(null);
+      window.alert(error instanceof Error ? error.message : "Could not ask the source AI for a handoff summary.");
+    } finally { setSending(false); }
+  }
+
+  async function captureSourceHandoffSummary() {
+    if (!selectedSession || !handoffSummaryState || handoffSummaryState.sourceSessionId !== selectedSession.id) return;
+    setSending(true);
+    try {
+      const snapshot = await requestFreshSessionSnapshot(selectedSession);
+      if (!snapshot?.messages.length) throw new Error("Workspace still cannot read the source response. Open the original provider chat, wait for it to finish, then try Refresh capture before capturing the handoff.");
+      if (snapshot.status === "working") throw new Error("The source AI is still generating. Wait for it to finish before capturing the handoff.");
+      const requestIndex = snapshot.messages.reduce((last, message, index) => message.role === "user" && message.text.includes(HANDOFF_REQUEST_MARKER) ? index : last, -1);
+      if (requestIndex < 0) throw new Error("The handoff request could not be found in the captured transcript. I won't guess which response belongs to this handoff.");
+      let latestAssistant: SessionMessage | undefined;
+      for (let i = snapshot.messages.length - 1; i > requestIndex; i -= 1) {
+        if (snapshot.messages[i].role === "assistant") { latestAssistant = snapshot.messages[i]; break; }
+      }
+      if (!latestAssistant) throw new Error("The source AI's handoff response has not been captured yet.");
+      const begin = latestAssistant.text.indexOf("BEGIN_AI_WORKSPACE_HANDOFF");
+      const end = latestAssistant.text.lastIndexOf("END_AI_WORKSPACE_HANDOFF");
+      const summary = begin >= 0 && end > begin
+        ? latestAssistant.text.slice(begin + "BEGIN_AI_WORKSPACE_HANDOFF".length, end).trim()
+        : latestAssistant.text.trim();
+      if (summary.length < 300) throw new Error("The captured handoff response is unusually short. Verify it in the original provider before using it.");
+      await persistFreshSnapshot(selectedSession, snapshot);
+      setHandoffSummaryState((current) => current ? { ...current, status: "ready", summary } : current);
+      setIncludeHandoffTranscript(false);
+      setIncludeRelatedHandoffSessions(false);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not capture the source AI handoff.");
+    } finally { setSending(false); }
+  }
+
+  function clearSourceHandoffSummary() { setHandoffSummaryState(null); }
 
   async function openVSCodeAgentDraft() {
     if (!selectedSession) return;
@@ -1090,56 +1252,13 @@ export function App() {
   async function sendPrompt(session: AISession) {
     const text = composer.trim();
     if (!text || sending) return;
-
     setSending(true);
     try {
-      const tabId = session.tabId ?? await ensureSessionTab(session);
-      if (tabId === null) throw new Error("Could not reopen the conversation.");
-      const targetTabId = tabId;
-
-      async function send(): Promise<{ ok?: boolean; error?: string }> {
-        return chrome.tabs.sendMessage(targetTabId, { type: "ai-workspace:send-prompt", text });
-      }
-
-      let response: { ok?: boolean; error?: string } | undefined;
-      try {
-        response = await send();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const bridgeMissing = /receiving end does not exist|could not establish connection/i.test(message);
-        if (!bridgeMissing) {
-          window.alert("Could not confirm that the prompt was delivered. Open the provider tab to verify before trying again.");
-          return;
-        }
-
-        try {
-          await chrome.scripting.executeScript({ target: { tabId: targetTabId }, files: ["content.js"] });
-          await new Promise((resolve) => window.setTimeout(resolve, 150));
-          response = await send();
-        } catch {
-          window.alert("The provider bridge was unavailable. Open the provider tab and try again.");
-          return;
-        }
-      }
-
-      if (response?.ok) {
-        setComposer("");
-        let targetWindowId = session.windowId;
-        try {
-          targetWindowId = (await chrome.tabs.get(targetTabId)).windowId;
-        } catch {}
-        setSessions((current) => current.map((item) => item.id === session.id
-          ? { ...item, status: "working", lifecycle: "open", tabId: targetTabId, windowId: targetWindowId, latestUser: text.slice(0, 500) }
-          : item));
-        return;
-      }
-
-      window.alert(response?.error || "The provider did not accept the prompt. Nothing was retried automatically.");
+      await deliverPromptToSession(session, text);
+      setComposer("");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not send the prompt.");
-    } finally {
-      setSending(false);
-    }
+    } finally { setSending(false); }
   }
 
   return (
@@ -1326,10 +1445,11 @@ export function App() {
                     <div className="detail-heading">
                       <span className={"provider-badge " + selectedSession.provider}>{getProviderLabel(selectedSession.provider)}</span>
                       <h3>{sessionDisplayTitle(selectedSession)}</h3>
-                      <div className="detail-subline">{statusMeta[selectedSession.status].label} · {selectedSession.lifecycle}{selectedMessages.length ? " · conversation cached locally" : ""}</div>
+                      <div className="detail-subline">{statusMeta[selectedSession.status].label} · {selectedSession.lifecycle} · {selectedCaptureSource === "live" ? "fresh text snapshot" : selectedCaptureSource === "cached" ? "cached text snapshot · may be stale" : "no message text captured"}</div>
                     </div>
                     <div className="detail-actions">
                       <button className="session-rename" title="Rename session" aria-label="Rename session" onClick={() => void renameSession(selectedSession)}><Pencil size={13} /></button>
+                      {selectedSession.lifecycle === "open" && selectedSession.tabId !== null && <button className="refresh" disabled={captureRefreshing} onClick={() => void refreshSelectedCapture()}><RefreshCw size={13} /> {captureRefreshing ? "Capturing…" : "Refresh capture"}</button>}
                       <button className="handoff-button" onClick={openHandoff} title="Prepare context for another AI provider"><ArrowRightLeft size={13} /><span>Handoff</span></button>
                       <button className="refresh" onClick={() => void openInChrome(selectedSession)}><ExternalLink size={13} /> Open in Chrome</button>
                       {selectedSession.lifecycle !== "closed" && selectedSession.tabId !== null && <button className="session-close" onClick={() => void closeSession(selectedSession)} title="Close browser tab"><X size={14} /></button>}
@@ -1359,6 +1479,7 @@ export function App() {
                     </section>
                   )}
 
+                  <div className="native-content-note"><strong>This is a text snapshot, not a clone of the provider UI.</strong> Interactive plans, artifact panels, attached files, previews, and other native features stay in the original conversation. Use <em>Open in Chrome</em> to preserve the full experience.</div>
                   <div className="message-list">
                     {selectedMessages.length > 0 ? (
                       selectedMessages.map((message) => (
@@ -1403,13 +1524,23 @@ export function App() {
             <div className="handoff-fields">
               <label>Destination AI<select value={handoffProvider} onChange={(event) => setHandoffProvider(event.target.value as Provider)}><option value="chatgpt">ChatGPT</option><option value="claude">Claude</option><option value="gemini">Gemini</option></select></label>
               <label>What should it do next?<textarea value={handoffInstruction} maxLength={3000} onChange={(event) => setHandoffInstruction(event.target.value)} rows={3} placeholder="Describe the next step for the destination AI…" /></label>
-              <label className="handoff-check"><input type="checkbox" checked={includeHandoffTranscript} onChange={(event) => setIncludeHandoffTranscript(event.target.checked)} /> Include recent cached conversation turns</label>
+              <label className="handoff-check"><input type="checkbox" checked={includeHandoffTranscript} disabled={handoffSummaryState?.status === "ready"} onChange={(event) => setIncludeHandoffTranscript(event.target.checked)} /> Include recent cached conversation turns</label>
+              <section className="source-summary-panel">
+                <div className="source-summary-heading"><FileText size={15} /><div><strong>More reliable: ask the source AI</strong><span>Let the original model summarize the full context it still has—including earlier decisions and native plans—instead of relying on this text scrape.</span></div></div>
+                {handoffSummaryState?.status === "ready" ? (
+                  <div className="source-summary-ready"><span>Source AI handoff captured · the prompt below uses this summary instead of the scraped transcript.</span><button className="quiet-button" onClick={clearSourceHandoffSummary}>Discard summary</button></div>
+                ) : handoffSummaryState?.status === "waiting" ? (
+                  <div className="source-summary-actions"><p>Request sent to the original conversation. Wait for that AI to finish, then capture its latest reply.</p><button className="secondary-small" disabled={sending} onClick={() => void captureSourceHandoffSummary()}><RefreshCw size={13} /> {sending ? "Capturing…" : "Capture source summary"}</button></div>
+                ) : (
+                  <div className="source-summary-actions"><p>This adds one message to the original chat. It is the best option for long threads, plans, and previous decisions.</p><button className="secondary-small" disabled={sending || selectedSession.lifecycle !== "open" || selectedSession.tabId === null} onClick={() => void askSourceForHandoffSummary()}><FileText size={13} /> {sending ? "Preparing…" : "Ask " + getProviderLabel(selectedSession.provider) + " to summarize"}</button></div>
+                )}
+              </section>
               {includeHandoffTranscript && <label>How much recent context?<select value={handoffMessageLimit} onChange={(event) => setHandoffMessageLimit(Number(event.target.value))}><option value={6}>Last 6 messages</option><option value={12}>Last 12 messages</option><option value={20}>Last 20 messages</option></select></label>}
-              {relatedSessions.length > 0 && <label className="handoff-check"><input type="checkbox" checked={includeRelatedHandoffSessions} onChange={(event) => setIncludeRelatedHandoffSessions(event.target.checked)} /> Include up to {Math.min(3, relatedSessions.length)} related session(s)</label>}
+              {relatedSessions.length > 0 && <label className="handoff-check"><input type="checkbox" checked={includeRelatedHandoffSessions} onChange={(event) => void setRelatedHandoffContext(event.target.checked)} /> Include up to {Math.min(3, relatedSessions.length)} related session(s)</label>}
               <div className="handoff-context-summary"><strong>{handoffProject?.name ?? "Inbox"}</strong><span>{projectBriefs[handoffProjectId]?.trim() ? "Project context included" : "No shared project context saved"}</span><span>{includeHandoffTranscript ? selectedMessages.length + " cached message(s) available; recent excerpt is capped" : "Transcript excluded"}</span>{includeRelatedHandoffSessions && <span>{handoffRelatedLoading ? "Loading related context…" : Math.min(3, relatedSessions.length) + " related thread(s) included"}</span>}</div>
               <details className="handoff-preview-disclosure"><summary>Review exact handoff prompt</summary><pre className="handoff-preview">{handoffPrompt}</pre></details>
             </div>
-            <footer className="handoff-modal-footer"><span>Local preview · no prompt is submitted automatically</span><div className="handoff-footer-actions"><button className="secondary-small" disabled={includeRelatedHandoffSessions && handoffRelatedLoading} onClick={() => void openVSCodeAgentDraft()}><Code2 size={14} /> VS Code Agent</button><button className="primary-small" disabled={includeRelatedHandoffSessions && handoffRelatedLoading} onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Prepare {getProviderLabel(handoffProvider)} draft</button></div></footer>
+            <footer className="handoff-modal-footer"><span>Local preview · no destination prompt is submitted automatically</span><div className="handoff-footer-actions"><button className="secondary-small" disabled={includeRelatedHandoffSessions && handoffRelatedLoading} onClick={() => void openVSCodeAgentDraft()}><Code2 size={14} /> VS Code Agent</button><button className="primary-small" disabled={includeRelatedHandoffSessions && handoffRelatedLoading} onClick={() => void createNewChat({ provider: handoffProvider, projectId: handoffProjectId, initialPrompt: handoffPrompt })}><ArrowRightLeft size={14} /> Prepare {getProviderLabel(handoffProvider)} draft</button></div></footer>
           </section>
         </div>
       )}

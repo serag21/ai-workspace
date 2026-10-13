@@ -12,13 +12,13 @@ The long-term direction is one session model for both web AI conversations and l
 - **Automatic discovery** of open ChatGPT, Claude, and Gemini tabs.
 - **Project organization** with Inbox-first onboarding, manual move/pin, review-before-moving project suggestions, and session nicknames such as “Mastermind” or “Thumbnail Studio.”
 - **Session lifecycle** for open, discarded, and closed tabs.
-- **Recent conversation context** in session cards and a selected-session transcript, cached locally (up to 100 recent messages and a 400,000-character transcript budget per session; exceptionally long messages are truncated locally).
+- **Recent conversation text snapshots** in session cards and a selected-session view, cached locally (up to 100 recent messages and a 400,000-character transcript budget per session). A snapshot is not a recreation of native plans, artifacts, interactive UI, files, or previews; the original provider tab remains the source of truth.
 - **Create new chats from the workspace** with ChatGPT, Claude, or Gemini. New chats open in background tabs and use the user's existing signed-in provider session.
 - **Continue from the workspace** by sending a prompt to a selected provider session. If a cached session is closed, Workspace can reopen it in a background tab to continue.
 - **Close tabs in bulk** after attempting a fresh local transcript capture first. Open tabs are left open if a fresh capture fails, even if an older cache exists, rather than risking loss of newer context.
 - **Local transcript search** over cached messages when the user searches, plus title and recent-message search.
 - **Related work** suggestions that surface other potentially relevant sessions.
-- **Project context and handoffs**: save per-project context, prepare bounded cross-provider handoffs, or open an unsent VS Code Agents draft with an optional linked local workspace URI.
+- **Project context and handoffs**: save per-project context, prepare a bounded cross-provider handoff from captured text, or explicitly ask the original provider AI to create a thorough handoff summary from its own conversation context. Related sessions are opt-in and cannot leak into a handoff silently. VS Code Agents drafts accept the same prompt with an optional linked local workspace URI.
 - **Local portability**: export/merge project settings and cached transcripts through a validated JSON backup.
 - **Performance safeguards**: no eager full snapshots of every session, throttled scans/publication, compact persisted previews, and no blind multi-attempt prompt retries.
 
@@ -26,7 +26,7 @@ The long-term direction is one session model for both web AI conversations and l
 
 - It does **not** import your entire historical ChatGPT/Claude/Gemini account archive. It captures sessions that have been open and observed by the extension. Closing a session before it is first captured can mean its transcript is not available in Workspace.
 - It retains the latest 100 messages it has captured per session, not an unlimited full archive. Open the provider conversation for its complete context.
-- Web integrations depend on provider page structure and can need fixes when a provider changes its UI.
+- Web integrations depend on provider page structure and can need fixes when a provider changes its UI. AI Workspace retries empty captures, refreshes full text snapshots periodically, and prefers one provider selector family to reduce duplicate/nested turns, but provider-specific QA is still needed.
 - The extension requires Chrome or a compatible Chromium browser, and the browser/provider session may need to open in the background to continue a closed conversation.
 - Provider sign-in prompts, rate limits, CAPTCHA/checks, and unusual provider errors are not yet exposed as a complete, provider-independent attention taxonomy.
 - There is no automatic local workspace discovery, live repository/branch/dirty-state view, coding-agent transcript capture, shell/terminal control, desktop app, cross-device sync, account system, or cloud backend. VS Code's native Agents window can receive an unsent handoff draft from a linked project folder; that is not a terminal companion.

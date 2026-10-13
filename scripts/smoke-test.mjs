@@ -144,3 +144,22 @@ const longVscodeUrl = buildVSCodeAgentUrl("é ".repeat(20000) + "\n\n## Handoff 
 assert.ok(longVscodeUrl.length <= 26000, "VS Code URL should stay under the OS dispatch limit");
 assert.match(new URL(longVscodeUrl).searchParams.get("prompt"), /Handoff rules/);
 console.log("Additional tests passed: VS Code agent URL handoff, local URI allow-list, optional workspace selection, and URL length bounds.");
+
+
+const contentSource = await readFile("public/content.js", "utf8");
+assert.match(contentSource, /2026-10-12-v6/, "bridge version should force refreshed capture code into already-open tabs");
+assert.match(contentSource, /FULL_SNAPSHOT_INTERVAL_MS/);
+assert.match(contentSource, /EMPTY_SNAPSHOT_RETRY_INTERVAL_MS/);
+assert.match(contentSource, /first selector family that matches this page/);
+assert.match(contentSource, /transcriptSignature/);
+
+const handoffWithSourceSummary = buildHandoffPrompt({
+  sourceTitle: "Wallpaper timezones", sourceProviderLabel: "Claude", instruction: "Continue the timezone fix.",
+  messages: [{ id: "old", role: "assistant", text: "stale partial text from several turns ago", observedAt: 1 }],
+  includeTranscript: true,
+  sourceSummary: "## Current state\nThe source AI confirmed the timezone conversion path and listed two unverified edge cases.",
+});
+assert.match(handoffWithSourceSummary, /handoff summary prepared by the source AI/i);
+assert.match(handoffWithSourceSummary, /two unverified edge cases/);
+assert.doesNotMatch(handoffWithSourceSummary, /stale partial text from several turns ago/);
+console.log("Additional tests passed: late-DOM transcript capture retry, selector fallback, bridge upgrade, and source-AI summaries replacing scraped excerpts.");

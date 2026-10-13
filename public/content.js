@@ -1,7 +1,7 @@
 (() => {
   if (window.top !== window) return;
 
-  const BRIDGE_VERSION = "2026-10-09-v5";
+  const BRIDGE_VERSION = "2026-10-12-v6";
   const previousBridge = window.__AI_WORKSPACE_PROVIDER_BRIDGE__;
   if (previousBridge?.version === BRIDGE_VERSION) return;
   previousBridge?.dispose?.();
@@ -22,7 +22,11 @@
   const MAX_MESSAGE_CHARS = 15000;
   const MAX_TRANSCRIPT_CHARS = 400000;
   const WORKING_PUBLISH_INTERVAL_MS = 10000;
+  const FULL_SNAPSHOT_INTERVAL_MS = 15000;
+  const EMPTY_SNAPSHOT_RETRY_INTERVAL_MS = 4000;
   let lastSignature = "";
+  let lastFullSnapshotAt = 0;
+  let lastFullMessageCount = 0;
   let lastPublishedStatus = "";
   let lastPublishedTitle = "";
   let pendingPublishKey = "";
@@ -70,19 +74,24 @@
     },
   };
 
-  function collectMessages() {
-    const config = configs[provider];
-    const entries = [];
-    const seen = new Set();
+  function elementsForRole(role) {
+    // These selectors are fallbacks, not a union. Combining them can collect a
+    // reply and its wrapper as separate turns. Use the first selector family
+    // that matches this page and fall back only when it matches nothing.
+    for (const selector of configs[provider][role]) {
+      const matches = Array.from(document.querySelectorAll(selector));
+      if (!matches.length) continue;
+      return matches.filter((element) =>
+        !matches.some((other) => other !== element && element.contains(other)),
+      );
+    }
+    return [];
+  }
 
+  function collectMessages() {
+    const entries = [];
     for (const role of ["user", "assistant"]) {
-      for (const selector of config[role]) {
-        for (const element of Array.from(document.querySelectorAll(selector))) {
-          if (seen.has(element)) continue;
-          seen.add(element);
-          entries.push({ element, role });
-        }
-      }
+      for (const element of elementsForRole(role)) entries.push({ element, role });
     }
 
     entries.sort((a, b) => {
@@ -128,12 +137,8 @@
     return bounded;
   }
 
-  function latestMessageElement(selectors) {
-    const candidates = new Set();
-    for (const selector of selectors) {
-      for (const element of Array.from(document.querySelectorAll(selector))) candidates.add(element);
-    }
-
+  function latestMessageElement(role) {
+    const candidates = elementsForRole(role);
     let latest = null;
     for (const element of candidates) {
       if (!latest || (latest.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING)) latest = element;
@@ -154,8 +159,8 @@
       latestAssistant = assistants[assistants.length - 1]?.text || "";
       lastRole = messages[messages.length - 1]?.role || null;
     } else {
-      const userElement = latestMessageElement(configs[provider].user);
-      const assistantElement = latestMessageElement(configs[provider].assistant);
+      const userElement = latestMessageElement("user");
+      const assistantElement = latestMessageElement("assistant");
       latestUser = textOf(userElement);
       latestAssistant = textOf(assistantElement);
 
@@ -202,9 +207,18 @@
     const latestUser = snapshot.latestUser.slice(0, 8000);
     const latestAssistant = snapshot.latestAssistant.slice(0, 12000);
     const now = Date.now();
+    if (includeMessages) {
+      lastFullSnapshotAt = now;
+      lastFullMessageCount = snapshot.messages.length;
+    }
     if (status === "working" && lastPublishedStatus === "working" &&
-        now - lastPublishAt < WORKING_PUBLISH_INTERVAL_MS) return;
-    const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant + "|" + (includeMessages ? snapshot.messages.length : "preview") + "|" + snapshot.lastRole;
+        now - lastPublishAt < WORKING_PUBLISH_INTERVAL_MS && !includeMessages) return;
+    // Message count alone misses edits to older turns. Include actual bounded
+    // text so a changed full capture is not suppressed as an identical snapshot.
+    const transcriptSignature = includeMessages
+      ? snapshot.messages.map((message) => message.role + ":" + message.text).join("\u001f")
+      : "preview";
+    const signature = status + "|" + title + "|" + latestUser + "|" + latestAssistant + "|" + transcriptSignature + "|" + snapshot.lastRole;
     if (signature === lastSignature) return;
     lastSignature = signature;
     lastPublishAt = now;
@@ -285,7 +299,11 @@
     // reverting to Idle on the next periodic scan.
     if (doneTimer) return;
 
-    const includeMessages = lastSignature === "";
+    // Conversation history is often injected after document_idle. Retry empty
+    // captures frequently until message nodes appear, then refresh the full
+    // bounded transcript periodically even when the chat is otherwise idle.
+    const interval = lastFullMessageCount === 0 ? EMPTY_SNAPSHOT_RETRY_INTERVAL_MS : FULL_SNAPSHOT_INTERVAL_MS;
+    const includeMessages = lastSignature === "" || Date.now() - lastFullSnapshotAt >= interval;
     const snapshot = extractSnapshot(undefined, includeMessages);
     const nextStatus = snapshot.lastRole === "assistant" && findInput() ? "needs-you" : "idle";
     const shouldPublish = includeMessages || nextStatus !== lastPublishedStatus || title !== lastPublishedTitle;

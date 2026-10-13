@@ -132,3 +132,16 @@ Do not call the extension ready for public release until:
 
 - [ ] Where related work is suggested, verify up to three related thread excerpts can be included, each remains labeled by title/provider, and turning the option off excludes those threads.
 - [ ] Verify the handoff actions remain disabled while related transcripts are being loaded, so the user cannot accidentally send an incomplete context packet.
+
+
+## 12. Regression checks for capture quality and trustworthy handoffs
+
+- [ ] Open an already-loaded ChatGPT, Claude, and Gemini conversation from before the extension reload; select each without manually refreshing the provider tab and verify the transcript begins populating after capture retries.
+- [ ] Leave an idle conversation selected/open for 20 seconds and verify later assistant/user turns are reflected without refreshing that browser tab.
+- [ ] Verify one assistant response appears once (not duplicated because both an inner response selector and a wrapper selector matched).
+- [ ] Verify the detail panel labels the capture as live, cached/stale, or uncaptured, and clearly says native plan/artifact/file UI remains in the original provider tab.
+- [ ] Click Refresh capture and verify the selected transcript updates; confirm the original conversation remains accessible and unchanged by capture.
+- [ ] Open Handoff and verify related sessions are unchecked by default; no other conversation appears in the generated prompt unless explicitly opted into.
+- [ ] For a complex handoff, choose Ask the source AI to summarize. Confirm first that it adds a message to the original conversation. Wait for it to finish, click Capture source summary, review the result, and verify the target prompt uses this model-authored summary instead of the scraped excerpt.
+- [ ] Verify source summary capture refuses a still-generating reply, a reply without the explicit request turn, or an unusually short result; verify fast excerpt handoff still works when you do not ask the source AI.
+- [ ] Ensure project-scoped related-work suggestions do not pull sessions from other explicitly named projects.
