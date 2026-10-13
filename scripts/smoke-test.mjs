@@ -150,7 +150,7 @@ const contentSource = await readFile("public/content.js", "utf8");
 assert.match(contentSource, /2026-10-12-v6/, "bridge version should force refreshed capture code into already-open tabs");
 assert.match(contentSource, /FULL_SNAPSHOT_INTERVAL_MS/);
 assert.match(contentSource, /EMPTY_SNAPSHOT_RETRY_INTERVAL_MS/);
-assert.match(contentSource, /first selector family that matches this page/);
+assert.match(contentSource, /first selector family/);
 assert.match(contentSource, /transcriptSignature/);
 
 const handoffWithSourceSummary = buildHandoffPrompt({
