@@ -791,9 +791,15 @@ export function App() {
   async function deliverPromptToSession(session: AISession, text: string): Promise<void> {
     const prompt = text.trim();
     if (!prompt) throw new Error("Prompt is empty.");
-    const tabId = session.tabId ?? await ensureSessionTab(session);
-    if (tabId === null) throw new Error("Could not reopen the source conversation.");
-    async function send() { return chrome.tabs.sendMessage(tabId, { type: "ai-workspace:send-prompt", text: prompt }); }
+    const candidateTabId = session.tabId ?? await ensureSessionTab(session);
+    if (candidateTabId === null) throw new Error("Could not reopen the source conversation.");
+    const targetTabId: number = candidateTabId;
+    async function send() {
+      return chrome.tabs.sendMessage<{ ok?: boolean; error?: string }>(
+        targetTabId,
+        { type: "ai-workspace:send-prompt", text: prompt },
+      );
+    }
     let response: { ok?: boolean; error?: string } | undefined;
     try { response = await send(); }
     catch (error) {
@@ -801,16 +807,16 @@ export function App() {
       const bridgeMissing = /receiving end does not exist|could not establish connection/i.test(message);
       if (!bridgeMissing) throw new Error("Could not confirm that the prompt was delivered. Open the provider tab to verify before trying again.");
       try {
-        await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+        await chrome.scripting.executeScript({ target: { tabId: targetTabId }, files: ["content.js"] });
         await new Promise((resolve) => window.setTimeout(resolve, 450));
         response = await send();
       } catch { throw new Error("The provider bridge was unavailable. Open the provider tab and try again."); }
     }
     if (!response?.ok) throw new Error(response?.error || "The provider did not accept the prompt. Nothing was retried automatically.");
     let targetWindowId = session.windowId;
-    try { targetWindowId = (await chrome.tabs.get(tabId)).windowId; } catch {}
+    try { targetWindowId = (await chrome.tabs.get(targetTabId)).windowId; } catch {}
     setSessions((current) => current.map((item) => item.id === session.id
-      ? { ...item, status: "working", lifecycle: "open", tabId, windowId: targetWindowId, latestUser: prompt.slice(0, 500) }
+      ? { ...item, status: "working", lifecycle: "open", tabId: targetTabId, windowId: targetWindowId, latestUser: prompt.slice(0, 500) }
       : item));
   }
 
