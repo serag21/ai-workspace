@@ -1,7 +1,7 @@
 (() => {
   if (window.top !== window) return;
 
-  const BRIDGE_VERSION = "2026-10-12-v6";
+  const BRIDGE_VERSION = "2026-10-14-v7";
   const previousBridge = window.__AI_WORKSPACE_PROVIDER_BRIDGE__;
   if (previousBridge?.version === BRIDGE_VERSION) return;
   previousBridge?.dispose?.();
@@ -397,5 +397,5 @@
   }
 
   window.__AI_WORKSPACE_PROVIDER_BRIDGE__ = { version: BRIDGE_VERSION, dispose };
-  window.addEventListener("unload", dispose);
+  // The host page may block unload handlers; browser navigation tears down this document context.
 })();

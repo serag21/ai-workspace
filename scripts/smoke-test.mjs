@@ -147,11 +147,16 @@ console.log("Additional tests passed: VS Code agent URL handoff, local URI allow
 
 
 const contentSource = await readFile("public/content.js", "utf8");
-assert.match(contentSource, /2026-10-12-v6/, "bridge version should force refreshed capture code into already-open tabs");
+assert.match(contentSource, /2026-10-14-v7/, "bridge version should force refreshed capture code into already-open tabs");
 assert.match(contentSource, /FULL_SNAPSHOT_INTERVAL_MS/);
 assert.match(contentSource, /EMPTY_SNAPSHOT_RETRY_INTERVAL_MS/);
 assert.match(contentSource, /first selector family/);
 assert.match(contentSource, /transcriptSignature/);
+assert.doesNotMatch(contentSource, /addEventListener\(["']unload/, "provider bridge must not register a permissions-policy-blocked unload listener");
+assert.match(contentSource, /previousBridge\?\.dispose\?\.\(\)/, "bridge replacement must still dispose previous timers and observer");
+
+const rootPackage = JSON.parse(await readFile("package.json", "utf8"));
+assert.equal(rootPackage.overrides?.["source-map-js"], "^1.2.2", "force the patched source-map-js release even when a local lockfile is stale");
 
 const handoffWithSourceSummary = buildHandoffPrompt({
   sourceTitle: "Wallpaper timezones", sourceProviderLabel: "Claude", instruction: "Continue the timezone fix.",
