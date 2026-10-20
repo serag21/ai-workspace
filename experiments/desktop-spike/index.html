@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>AI Workspace · Desktop spike</title>
+<style>
+:root{font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e9f4;background:#0d1018}
+*{box-sizing:border-box}body{margin:0}button,select{font:inherit;color:inherit}
+header{position:absolute;top:0;left:0;right:0;height:64px;display:flex;gap:20px;align-items:center;padding:0 20px;border-bottom:1px solid #293344;background:#121827;z-index:1}
+header h1{font-size:15px;margin:0;letter-spacing:-.02em}header small{display:block;color:#8995aa;font-size:10px}
+.controls{display:flex;align-items:center;gap:8px;margin-left:auto}
+button{background:#202b3b;border:1px solid #344153;border-radius:9px;padding:8px 11px;cursor:pointer}
+button:hover{background:#314158}
+button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
+.sidebar{position:absolute;left:0;top:64px;bottom:0;width:270px;padding:16px;border-right:1px solid #293344;background:#121724;overflow:auto}
+.sidebar h2{margin:10px 0;color:#8b9cbd;font-size:10px;text-transform:uppercase;letter-spacing:.1em}
+.sidebar select{width:100%;margin:5px 0 8px;border:1px solid #344153;border-radius:8px;background:#1b2534;padding:9px}
+.sidebar .hint{color:#9ca7b9;font-size:11px;line-height:1.65}
+.sidebar .caution{background:#282015;border:1px solid #5c4430;border-radius:9px;padding:10px;color:#e7be8b;margin-top:20px;font-size:11px}
+.sidebar .refresh{width:100%;margin-top:8px}
+.agent-pane{position:absolute;left:calc(50% + 135px);right:0;top:64px;bottom:0;background:#0f1520;border-left:1px solid #344153;padding:20px;overflow:auto}
+.agent-pane.hidden{display:none}
+.agent-pane h2{margin:0 0 5px;font-size:17px} .sub{color:#96a4bb;font-size:11px;margin:0 0 16px}
+.agent-entry{display:block;text-align:left;width:100%;margin:7px 0;padding:10px;border:1px solid #2a3749;border-radius:9px;background:#192333}
+.agent-entry strong{display:block;font-size:12px;margin-bottom:3px}
+.agent-entry span{display:block;color:#98a7b9;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent-entry:hover{border-color:#6486bb}
+.detail{margin:18px 0 0;padding:12px;border:1px solid #354257;background:#151d2b;border-radius:10px;word-break:break-word;font-size:11px;white-space:pre-wrap;color:#c0cada}
+#message{font-size:11px;color:#f7c282;min-height:20px}
+.pill{font-size:10px;letter-spacing:.04em;color:#95c2ef}
+</style></head>
+<body>
+<header>
+  <div><h1>AI Workspace <span class="pill">Desktop feasibility</span></h1><small>Actual provider websites + local coding-agent inventory</small></div>
+  <div class="controls" role="group" aria-label="Layout">
+    <button data-layout="single" aria-pressed="false">One chat</button>
+    <button data-layout="split" aria-pressed="false">Two chats</button>
+    <button data-layout="agent" aria-pressed="true">Chat + local agents</button>
+  </div>
+</header>
+<aside class="sidebar">
+  <h2>Left native website</h2>
+  <select id="left" aria-label="Left provider">
+    <option value="chatgpt">ChatGPT</option><option value="claude">Claude</option><option value="gemini">Gemini</option>
+  </select>
+  <h2>Right native website</h2>
+  <select id="right" aria-label="Right provider">
+    <option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option>
+  </select>
+  <p class="hint">Choose <b>Two chats</b> to display two genuine provider webpages simultaneously. Choose <b>Chat + local agents</b> to display your local Claude Code/Codex session inventory beside a genuine provider webpage.</p>
+  <h2>Local session discovery</h2>
+  <p class="hint">Reads metadata from local session files. No AI calls, prompts, retries, or background syncing.</p>
+  <button class="refresh" id="refresh">Refresh local sessions</button>
+  <p id="message" role="status"></p>
+  <div class="caution">Experimental only. Provider sign-in, OAuth popups, full attachments, voice, and agent continuation have not been verified. Provider websites may reject embedded browsers. Don't use this for irreplaceable work yet.</div>
+</aside>
+<section id="agentPane" class="agent-pane" aria-label="Local coding-agent sessions">
+  <h2>Local coding agents</h2>
+  <p class="sub">Claude Code + Codex · read-only · most recently modified</p>
+  <div id="agentList">Scanning local metadata…</div>
+  <pre class="detail" id="agentDetail" hidden></pre>
+</section>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+function setMessage(message){ $("message").textContent = String(message || ""); }
+function printDetails(agent){
+  $("agentDetail").hidden = false;
+  $("agentDetail").textContent = [
+    agent.provider + " | " + agent.sessionId,
+    "Title: " + agent.title,
+    "Project: " + (agent.cwd || "Not observed"),
+    "Branch: " + (agent.branch || "Not observed"),
+    "Last updated: " + new Date(agent.modifiedAt).toLocaleString(),
+    "Active status: unknown (not tracked)",
+    "Local transcript: " + agent.file,
+    "",
+    "This prototype never executes a prompt. Live attach/resume is the next experiment."
+  ].join("\n");
+}
+async function refreshAgents(){
+  const parent = $("agentList");
+  parent.textContent = "Reading local metadata…";
+  try {
+    const agents = await window.aiWorkspace.listAgents();
+    parent.replaceChildren();
+    if (!agents.length) {
+      parent.textContent = "No recognized sessions found in the configured local directories.";
+      return;
+    }
+    for (const agent of agents) {
+      const button = document.createElement("button");
+      button.className = "agent-entry";
+      const title = document.createElement("strong");
+      title.textContent = agent.title;
+      const subtitle = document.createElement("span");
+      subtitle.textContent = agent.provider + " · " + (agent.cwd || "Unknown working directory") + " · " +
+        new Date(agent.modifiedAt).toLocaleDateString();
+      button.append(title, subtitle);
+      button.addEventListener("click", () => printDetails(agent));
+      parent.appendChild(button);
+    }
+    setMessage(agents.length + " local sessions discovered.");
+  } catch(e) {
+    parent.textContent = "Inventory failed. See the desktop app console.";
+    setMessage(e.message);
+  }
+}
+document.querySelectorAll("[data-layout]").forEach(button => {
+  button.addEventListener("click", async () => {
+    try {
+      const mode = await window.aiWorkspace.setLayout(button.dataset.layout);
+      document.querySelectorAll("[data-layout]").forEach(b =>
+        b.setAttribute("aria-pressed", String(b.dataset.layout === mode)));
+      $("agentPane").classList.toggle("hidden", mode !== "agent");
+      setMessage("");
+    } catch(e) { setMessage(e.message); }
+  });
+});
+for (const pane of ["left","right"]) {
+  $(pane).addEventListener("change", async event => {
+    try { await window.aiWorkspace.selectProvider(event.target.value, pane); setMessage(""); }
+    catch(e){setMessage(e.message);}
+  });
+}
+$("refresh").addEventListener("click", refreshAgents);
+void refreshAgents();
+</script>
+</body></html>
