@@ -48,6 +48,14 @@ a unique market position or advertise native provider functionality until tested
 | ChatGPT Desktop | ChatGPT + Codex + Work in same app | Does not consolidate Claude/Gemini existing chats; Codex separate view/history. |
 | ADDOM / Zod | Cross-provider, projects, local tools/terminals and desktop surfaces | Must hands-on test whether they adopt existing provider *website* chat histories using consumer subscriptions rather than configured API credentials/new chats. |
 
+
+### Additional close products verified during the second pass
+
+- **Parallax (https://github.com/Houchen181/parallax)**: Windows desktop, up to **six** side-by-side model chats, broadcast prompts, Claude/GPT/Gemini using API credentials, plus an option to use a ChatGPT subscription in its app. It does **not** document adopting the user's existing consumer-web conversation histories or live Claude Code/Codex sessions. Consequence: six-pane chat layout and multi-model broadcast are commodities, not moats.
+- **Hydra by jpdlr (https://github.com/jpdlr/hydra)**, **Hydra IDE (https://github.com/ndunl075/hydra)**, **Harness by Codegraff (https://codegraff.com/harness)**, **Happy Desktop (https://happy.engineering/desktop-app/)** and **Caprock (https://caprock.dev/)** each offer serious local Claude Code/Codex workflow capabilities; do not claim those are uniquely ours. Most are coding-agent oriented rather than existing consumer website library managers.
+- **Codex–Claude Desktop Bridge (https://github.com/KeeVeeG/codex-claude-desktop-bridge)** already supports two-way text messages via MCP between selected existing Codex Desktop and Claude Desktop Code sessions on Windows. Consequence: even agent-to-agent communication is not a new differentiator; the broad web-chat ↔ local-agent boundary and workflow quality must prove value.
+- **OpenAI ChatGPT built-in browser (https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app)** now brings browsed pages into the ChatGPT desktop experience. This may reduce some customer switching costs, but it is not the same thing as a unified library of existing Claude/Gemini consumer-web threads.
+
 **No surveyed product has been verified to satisfy every boundary simultaneously.**
 That is not evidence of a durable moat. Treat as a falsifiable hypothesis.
 
