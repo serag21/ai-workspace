@@ -27,3 +27,13 @@ jobs:
       - name: Desktop UI script syntax
         run: |
           node --input-type=module -e "import fs from 'node:fs'; const html=fs.readFileSync('experiments/desktop-spike/index.html','utf8'); const script=html.match(/<script>([\s\S]*?)<\/script>/); if (!script) throw Error('Missing desktop UI script'); new Function(script[1]);"
+      - name: Verify regression gate register and produce coverage report
+        run: |
+          node --test experiments/desktop-spike/regression-report.test.mjs
+          node experiments/desktop-spike/regression-report.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-workspace-regression-coverage
+          path: experiments/desktop-spike/regression-status.md
+          if-no-files-found: warn
