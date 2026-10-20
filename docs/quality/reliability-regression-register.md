@@ -85,7 +85,7 @@ This is the **release gate** for known user pain and competitor failures. It is 
 | TRUST-005 | P1 | H | Sensitive chat contents exported or logged without user understanding. | Data minimization, no diagnostic logging of prompts by default, explicit export consent, protect error reports from private content. |
 | TRUST-006 | P2 | H | App adds too much complexity via countless features. | One-click everyday workspace navigation, accessible default view and measured task-completion time before shipping. |
 
-**Total: 53 independently trackable gates** (including observations, review allegations and preventive requirements). IDs persist when tests are refactored; never silently delete a gate. New incidents get a new ID; retain original report and remediation history.
+**Total: 50 independently trackable gates** (including observations, review allegations and preventive requirements). IDs persist when tests are refactored; never silently delete a gate. New incidents get a new ID; retain original report and remediation history.
 
 ## Test execution and reporting contract
 
