@@ -1,4 +1,4 @@
-name: Local agent spike tests
+name: Local agent and desktop spike checks
 on:
   push:
     branches:
@@ -12,4 +12,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --test experiments/local-agent-probe/discover.test.mjs
+      - name: Read-only discovery tests
+        run: node --test experiments/local-agent-probe/discover.test.mjs
+      - name: Electron main and preload syntax
+        run: |
+          node --check experiments/desktop-spike/main.cjs
+          node --check experiments/desktop-spike/preload.cjs
+      - name: Desktop UI script syntax
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const html=fs.readFileSync('experiments/desktop-spike/index.html','utf8'); const script=html.match(/<script>([\s\S]*?)<\/script>/); if (!script) throw Error('Missing desktop UI script'); new Function(script[1]);"
