@@ -103,8 +103,8 @@ test("REL-004 REL-014: stopAll cancels every account; no sends after shutdown",a
   assert.equal((await p1).reason,"cancelled");
   assert.equal((await p2).reason,"cancelled");
   assert.equal(cancelled,2);
-  assert.equal((await gate.run(CHAT,C1,read())).reason,"paused");
-  assert.equal((await gate.run("claude","second",read())).reason,"paused");
+  assert.equal((await gate.run(CHAT,C1,read())).reason,"stopped");
+  assert.equal((await gate.run("claude","second",read())).reason,"stopped");
 });
 
 test("REL-005: enforces shared per-provider request budget even across accounts",async()=>{
@@ -147,7 +147,7 @@ test("REL-008: rate-limiting one account doesn't overwrite status of a different
 });
 
 test("REL-006 REL-015: auth errors and network errors become terminal visible states, no retry loops",async()=>{
-  const {gate,clock}=context();
+  const {gate,clock}=context(10);
   gate.connect(CHAT,C1,{explicitConsent:true});
   const auth=await gate.run(CHAT,C1,read(async()=>({status:401})));
   assert.equal(auth.reason,"auth-required");
