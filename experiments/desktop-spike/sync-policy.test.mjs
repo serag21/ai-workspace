@@ -153,11 +153,14 @@ test("REL-006 REL-015: auth errors and network errors become terminal visible st
   assert.equal(auth.reason,"auth-required");
   assert.equal(gate.getState(CHAT,C1).mode,"auth-required");
   let count=0;
-  for(let i=0;i<2;i++){
+  assert.equal((await gate.run(CHAT,C1,read(async()=>{count++;return ok();}))).reason,"auth-required");
+  assert.equal(count,0,"must not keep polling after 401 without re-authentication");
+  gate.connect(CHAT,C1,{explicitConsent:true});
+  for(let i=0;i<3;i++){
     const r=await gate.run(CHAT,C1,read(async()=>{count++;throw Error("offline");}));
     assert.equal(r.reason,"network-error");
   }
-  assert.equal(count,2);
+  assert.equal(count,3);
   assert.equal(gate.getState(CHAT,C1).mode,"cooldown");
   clock.advance(30000);
   assert.equal((await gate.run(CHAT,C1,read())).reason,"cooldown");
@@ -189,4 +192,49 @@ test("REL-002: invalid account keys refused before any operation",()=>{
   const {gate}=context();
   assert.throws(()=>gate.connect(CHAT,""),TypeError);
   assert.throws(()=>gate.connect("invalid/provider","test"),TypeError);
+});
+
+
+test("REL-003 REL-007: disconnect and reconnect cannot bypass rate-limit cooldown", async () => {
+  const {gate,clock}=context();
+  gate.connect(CHAT,C1,{explicitConsent:true});
+  const blocked=await gate.run(CHAT,C1,read(async()=>({status:429,headers:{"Retry-After":"300"}})));
+  assert.equal(blocked.retryAt,300000);
+  gate.disconnect(CHAT,C1);
+  assert.equal(gate.connect(CHAT,C1,{explicitConsent:true}).ok,true);
+  let calls=0;
+  assert.equal((await gate.run(CHAT,C1,read(()=>{calls++;return ok();}))).reason,"cooldown");
+  assert.equal(calls,0);
+  clock.advance(300000);
+  assert.equal((await gate.run(CHAT,C1,read(()=>{calls++;return ok();}))).ok,true);
+  assert.equal(calls,1);
+});
+
+test("REL-014: quit cannot be bypassed by reconnect or a delayed response", async () => {
+  const {gate}=context();
+  gate.connect(CHAT,C1,{explicitConsent:true});
+  const pendingResponse=deferred();
+  const pending=gate.run(CHAT,C1,read(() => pendingResponse.promise));
+  gate.stopAll();
+  assert.equal(gate.connect(CHAT,"new",{explicitConsent:true}).reason,"stopped");
+  pendingResponse.resolve({status:200});
+  assert.equal((await pending).reason,"cancelled");
+  let calls=0;
+  assert.equal((await gate.run(CHAT,C1,read(()=>{calls++;return ok();}))).reason,"stopped");
+  assert.equal(calls,0);
+});
+
+test("REL-005: operation cannot issue unbounded retry work on a server-500 response", async () => {
+  const {gate}=context(10);
+  gate.connect(CHAT,C1,{explicitConsent:true});
+  let calls=0;
+  for (let i=0; i<3; i++) {
+    const response=await gate.run(CHAT,C1,read(async()=>{calls++;return {status:500};}));
+    assert.equal(response.reason,"provider-error");
+  }
+  assert.equal(calls,3);
+  assert.equal(gate.getState(CHAT,C1).mode,"cooldown");
+  const blocked=await gate.run(CHAT,C1,read(async()=>{calls++;return {status:500};}));
+  assert.equal(blocked.reason,"cooldown");
+  assert.equal(calls,3);
 });
