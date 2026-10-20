@@ -14,6 +14,8 @@ jobs:
           node-version: "22"
       - name: Read-only discovery tests
         run: node --test experiments/local-agent-probe/discover.test.mjs
+      - name: Official Claude Agent SDK adapter tests (mocked; no API calls)
+        run: node --test experiments/local-agent-probe/claude-sdk-adapter.test.mjs
       - name: Reliability policy regression tests (synthetic; not provider E2E)
         run: node --test experiments/desktop-spike/sync-policy.test.mjs
       - name: Desktop main-process behavior tests (fake Electron; no provider traffic)
