@@ -1,0 +1,196 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import vm from "node:vm";
+
+const DIR = path.dirname(fileURLToPath(import.meta.url));
+const script = await readFile(path.join(DIR, "main.cjs"), "utf8");
+
+/** Main-process unit test with a fake Electron implementation.
+ * Never launches an actual provider or makes HTTP requests. */
+async function shellFixture() {
+  const views = [];
+  const partitions = [];
+  const windows = [];
+  const handlers = new Map();
+  const ipcMain = { handle(name, handler) {
+    assert.equal(handlers.has(name), false, "IPC registered twice: " + name);
+    handlers.set(name, handler);
+  } };
+
+  class FakeWebContents extends EventEmitter {
+    constructor() {
+      super();
+      this.id = FakeWebContents.nextId++;
+      this.loaded = [];
+      this.closed = false;
+    }
+    static nextId = 1;
+    setWindowOpenHandler(handler) { this.popupHandler = handler; }
+    async loadURL(url) { this.loaded.push(url); }
+    isDestroyed() { return this.closed; }
+    close() { this.closed = true; }
+  }
+
+  class FakeView {
+    constructor(options) {
+      this.options = options;
+      this.webContents = new FakeWebContents();
+      this.bounds = [];
+      views.push(this);
+    }
+    setBounds(value) { this.bounds.push({ ...value }); }
+  }
+
+  class FakeWindow extends EventEmitter {
+    constructor(options) {
+      super();
+      this.options = options;
+      this.webContents = new FakeWebContents();
+      this.contentView = { addChildView: view => {
+        assert.ok(views.includes(view));
+        this.children.push(view);
+      } };
+      this.children = [];
+      this.width = options.width;
+      this.height = options.height;
+      windows.push(this);
+    }
+    getContentSize() { return [this.width, this.height]; }
+    isDestroyed() { return false; }
+    async loadFile(file) { this.file = file; }
+  }
+
+  const app = new EventEmitter();
+  app.whenReady = async () => {};
+  app.quit = () => { app.quitCalled = true; };
+  const session = {
+    fromPartition(partition) {
+      assert.ok(partition.startsWith("persist:ai-workspace-spike-"));
+      const item = {
+        partition,
+        setPermissionRequestHandler(handler) { this.permissionHandler = handler; },
+      };
+      partitions.push(item);
+      return item;
+    },
+  };
+  const mockElectron = { app, BrowserWindow: FakeWindow, WebContentsView: FakeView, ipcMain, session };
+  const sandbox = {
+    require(id) {
+      if (id === "electron") return mockElectron;
+      if (id === "node:path") return path;
+      throw Error("Unexpected native module: " + id);
+    },
+    __dirname: DIR,
+    URL,
+    console,
+  };
+  vm.runInNewContext(script, sandbox, { filename: "main.cjs" });
+  for (let i = 0; i < 10 && windows.length === 0; i++)
+    await new Promise(resolve => setImmediate(resolve));
+  assert.equal(windows.length, 1, "desktop shell bootstrapped one window");
+  const window = windows[0];
+  return {
+    views, partitions, windows, handlers, window,
+    sender: { sender: { id: window.webContents.id } },
+    otherSender: { sender: { id: -99 } },
+    app,
+  };
+}
+
+test("REL-002 REL-009 REL-013: startup loads one sandboxed native webpage only", async () => {
+  const f = await shellFixture();
+  assert.equal(f.views.length, 1);
+  const chat = f.views[0];
+  assert.deepEqual(chat.webContents.loaded, ["https://chatgpt.com/"]);
+  assert.equal(chat.options.webPreferences.nodeIntegration, false);
+  assert.equal(chat.options.webPreferences.contextIsolation, true);
+  assert.equal(chat.options.webPreferences.webSecurity, true);
+  assert.equal(chat.options.webPreferences.sandbox, true);
+  assert.equal(chat.options.webPreferences.webviewTag, false);
+  assert.equal(f.partitions.length, 1);
+  assert.equal(f.partitions[0].partition, "persist:ai-workspace-spike-chatgpt");
+  let permitted = true;
+  f.partitions[0].permissionHandler({}, "camera", value => { permitted = value; });
+  assert.equal(permitted, false);
+  assert.equal(chat.webContents.popupHandler({url: "https://example.com"}).action, "deny");
+  assert.ok([...f.handlers.keys()].every(name => !/sync|history|prompt/i.test(name)),
+    "No background web history sync or provider-send IPC may be installed by desktop boot.");
+});
+
+test("CON-006 AGENT-004: split creates a second independently isolated native provider view", async () => {
+  const f = await shellFixture();
+  const layout = await f.handlers.get("spike:set-layout")(f.sender, "split");
+  assert.equal(layout, "split");
+  assert.equal(f.views.length, 2);
+  assert.equal(f.views[1].webContents.loaded[0], "https://claude.ai/");
+  assert.deepEqual(f.partitions.map(p => p.partition),
+    ["persist:ai-workspace-spike-chatgpt", "persist:ai-workspace-spike-claude"]);
+  const left = f.views[0].bounds.at(-1);
+  const right = f.views[1].bounds.at(-1);
+  assert.equal(left.x, 270);
+  assert.equal(right.x, left.x + left.width);
+  assert.equal(left.y, right.y);
+  assert.equal(left.width + right.width, f.window.width - 270);
+  assert.equal(left.height, f.window.height - 64);
+});
+
+test("CON-015: switching layouts and providers never loads unused services", async () => {
+  const f = await shellFixture();
+  await f.handlers.get("spike:set-layout")(f.sender, "single");
+  assert.equal(f.views.length, 1);
+  await f.handlers.get("spike:select-provider")(f.sender, "gemini", "left");
+  assert.equal(f.views.length, 2);
+  assert.equal(f.views[1].webContents.loaded[0], "https://gemini.google.com/app");
+  await f.handlers.get("spike:set-layout")(f.sender, "split");
+  assert.equal(f.views.length, 3);
+  assert.equal(f.views[2].webContents.loaded[0], "https://claude.ai/");
+  await f.handlers.get("spike:set-layout")(f.sender, "agent");
+  const hidden = f.views[2].bounds.at(-1);
+  assert.equal(hidden.width, 0);
+  assert.equal(hidden.height, 0);
+});
+
+test("REL-013: provider view only allows HTTPS navigation, does not grant popup by default", async () => {
+  const f = await shellFixture();
+  const fview = f.views[0];
+  const listeners = fview.webContents.listeners("will-navigate");
+  assert.equal(listeners.length, 1);
+  let prevented = false;
+  listeners[0]({preventDefault(){prevented = true;}}, "file:///C:/Users/test/secret.txt");
+  assert.equal(prevented, true);
+  prevented = false;
+  listeners[0]({preventDefault(){prevented = true;}}, "https://chatgpt.com/c/123");
+  assert.equal(prevented, false);
+});
+
+test("REL-013: unrecognized sender, provider, pane, and layout denied before loading", async () => {
+  const f = await shellFixture();
+  const before = f.views.length;
+  await assert.rejects(f.handlers.get("spike:select-provider")(f.otherSender, "gemini", "left"), /Invalid provider/);
+  await assert.rejects(f.handlers.get("spike:select-provider")(f.sender, "evil", "left"), /Invalid provider/);
+  await assert.rejects(f.handlers.get("spike:select-provider")(f.sender, "gemini", "unrecognized"), /Invalid provider/);
+  assert.throws(() => f.handlers.get("spike:set-layout")(f.otherSender, "split"), /Invalid layout/);
+  assert.throws(() => f.handlers.get("spike:set-layout")(f.sender, "triple"), /Invalid layout/);
+  assert.equal(f.views.length, before);
+});
+
+test("CON-015: same provider in both panes is explicitly rejected rather than silently reusing one view", async () => {
+  const f = await shellFixture();
+  await f.handlers.get("spike:set-layout")(f.sender, "split");
+  await assert.rejects(f.handlers.get("spike:select-provider")(f.sender, "claude", "left"), /different providers/);
+  await f.handlers.get("spike:set-layout")(f.sender, "single");
+  await f.handlers.get("spike:select-provider")(f.sender, "claude", "left");
+  assert.throws(() => f.handlers.get("spike:set-layout")(f.sender, "split"), /two different providers/);
+});
+
+test("REL-013: app quits only when the window-all-closed event occurs; no background sync worker", async () => {
+  const f = await shellFixture();
+  assert.equal(f.app.quitCalled, undefined);
+  f.app.emit("window-all-closed");
+  assert.equal(f.app.quitCalled, true);
+});
