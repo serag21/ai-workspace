@@ -133,6 +133,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("spike:set-layout", (event, next) => {
     if (!ownsSender(event) || !LAYOUTS.has(next)) throw new Error("Invalid layout.");
+    if (next === "split" && selected.left === selected.right)
+      throw new Error("Select two different providers before entering split mode.");
     layout = next;
     layoutViews();
     return layout;
