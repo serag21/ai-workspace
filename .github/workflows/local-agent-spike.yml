@@ -14,6 +14,8 @@ jobs:
           node-version: "22"
       - name: Read-only discovery tests
         run: node --test experiments/local-agent-probe/discover.test.mjs
+      - name: Reliability policy regression tests (synthetic; not provider E2E)
+        run: node --test experiments/desktop-spike/sync-policy.test.mjs
       - name: Electron main and preload syntax
         run: |
           node --check experiments/desktop-spike/main.cjs
