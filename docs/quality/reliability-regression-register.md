@@ -87,6 +87,15 @@ This is the **release gate** for known user pain and competitor failures. It is 
 
 **Total: 50 independently trackable gates** (including observations, review allegations and preventive requirements). IDs persist when tests are refactored; never silently delete a gate. New incidents get a new ID; retain original report and remediation history.
 
+## Additional incident — repeated PC-wide ChatGPT loading failures (2026-10-19)
+
+**See [GitHub incident #3](https://github.com/serag21/ai-workspace/issues/3).**
+
+- **First occurrence:** all ChatGPT conversations failed to load on the PC, recovered after Echoes was force-closed. This is correlation, not confirmed causality.
+- **Second occurrence:** even previously open browser conversations stopped loading after a refresh; the user's **phone app still worked**. The user force-closed **both Echoes and ChatGPT/Codex desktop**, and the PC chats recovered. Because two applications were stopped at once, attribution is unresolved.
+- **Do not mark REL-001 resolved** based on a clean mocked request-policy test. We need real Windows host verification that our app never interrupts native provider tabs or other clients.
+- **Safe future isolation test:** if it happens again, without repeatedly clicking Retry, close **only one candidate application at a time**, check one known working chat between changes, and record which action restored it. Do not copy request headers, tokens, or private conversations to public issues.
+
 ## Test execution and reporting contract
 
 1. Maintain automated tests named with the corresponding IDs (unit/integration) and an automated coverage report; tests that depend on a real provider mark **MANUAL REQUIRED**, never fake PASS.
