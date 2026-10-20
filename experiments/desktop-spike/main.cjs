@@ -143,7 +143,28 @@ app.whenReady().then(async () => {
   ipcMain.handle("spike:list-agents", async (event) => {
     if (!ownsSender(event)) throw new Error("Unknown window.");
     const { discoverLocalAgents } = await import("../local-agent-probe/discover.mjs");
-    return discoverLocalAgents({ limit: 100 });
+    const fallbackInventory = await discoverLocalAgents({ limit: 150 });
+    // Prefer official SDK transcript metadata when the optional SDK is present.
+    // Neither this nor the fallback executes agents or sends any prompts.
+    try {
+      const { loadClaudeSessionSdk, listClaudeSessionsReadOnly } =
+        await import("../local-agent-probe/claude-sdk-adapter.mjs");
+      const sdk = await loadClaudeSessionSdk();
+      const claudeSessions = await listClaudeSessionsReadOnly({ sdk, limit: 150 });
+      const byId = new Map(fallbackInventory.map((item) => [item.id, item]));
+      for (const item of claudeSessions) {
+        const prior = byId.get(item.id);
+        // Official SDK is authoritative for display title/branch when it
+        // identifies the same local transcript. Preserve file path for backup.
+        byId.set(item.id, { ...prior, ...item, file: prior?.file ?? null });
+      }
+      return [...byId.values()].sort((a,b)=>b.modifiedAt-a.modifiedAt).slice(0,100);
+    } catch (error) {
+      // An unavailable optional SDK does not break local session discovery.
+      // Surface a warning in the developer console only, never private text.
+      console.warn("Claude SDK unavailable; using bounded local metadata inventory:", error?.message);
+      return fallbackInventory.slice(0,100);
+    }
   });
 
   await createWindow();
