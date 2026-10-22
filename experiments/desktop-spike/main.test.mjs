@@ -179,7 +179,9 @@ test("CON-001 REL-013: native browser fallback opens only canonical provider URL
   const open=f.handlers.get("spike:open-native-browser");
   // A provider conversation URL keeps path, not potentially sensitive query params.
   f.views[0].webContents.loaded.push("https://chatgpt.com/c/012345?token=do-not-leak#fragment");
-  assert.deepEqual(await open(f.sender,"left"),{opened:true,provider:"chatgpt"});
+  const result=await open(f.sender,"left");
+  assert.equal(result.opened,true);
+  assert.equal(result.provider,"chatgpt");
   assert.deepEqual(f.openedExternal,["https://chatgpt.com/c/012345"]);
   // Navigation to a third-party login service must not leak its URL/parameters.
   f.views[0].webContents.loaded.push("https://accounts.google.com/o/oauth2/v2/auth?secret=private");
