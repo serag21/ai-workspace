@@ -1,17 +1,21 @@
 {
   "name": "ai-workspace-desktop-spike",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
-  "description": "Isolated proof-of-concept: real provider web views alongside read-only local coding-agent sessions",
+  "description": "Experimental multi-provider desktop workbench with local coding-agent discovery; NOT a production release.",
   "main": "main.cjs",
   "scripts": {
+    "prestart": "node build-assets.cjs",
     "start": "electron .",
-    "check": "node --check main.cjs && node --check preload.cjs"
+    "check": "node --check main.cjs && node --check preload.cjs && node --check build-assets.cjs && node --check package-win.cjs",
+    "package:windows": "node build-assets.cjs && node package-win.cjs"
   },
   "devDependencies": {
-    "electron": "^44.9.0"
+    "electron": "44.9.3",
+    "@electron/packager": "^20.0.1"
   },
   "optionalDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.301"
-  }
+  },
+  "productName": "AI Workspace Preview"
 }
