@@ -1,0 +1,66 @@
+name: Desktop Preview Windows
+
+on:
+  push:
+    branches:
+      - spike/local-agents-desktop
+    paths:
+      - 'experiments/desktop-spike/**'
+      - 'experiments/local-agent-probe/**'
+      - '.github/workflows/desktop-preview-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-portable:
+    name: Package unsigned Windows x64 preview
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: experiments/desktop-spike
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install desktop dependencies
+        run: npm install --no-fund
+      - name: Verify bundled dependencies
+        run: npm ls electron @electron/packager
+      - name: Inspect desktop sources
+        run: npm run check
+      - name: Stage agent modules and package native executable
+        run: npm run package:windows
+      - name: Verify executable and local session assets
+        run: |
+          $build = Get-ChildItem -Path dist -Directory | Select-Object -First 1
+          if ($null -eq $build) { throw "No packaged Windows build directory" }
+          $exe = Get-ChildItem $build.FullName -Filter '*.exe' -File | Select-Object -First 1
+          if ($null -eq $exe) { throw "No Windows executable produced" }
+          $asar = Join-Path $build.FullName "resources\app.asar"
+          if (-not (Test-Path $asar)) { throw "Missing application archive" }
+          npx --yes @electron/asar list $asar | Select-String "agent-discovery/(discover|claude-sdk-adapter).mjs" | Out-Host
+          $entries = npx --yes @electron/asar list $asar
+          if (-not ($entries -match 'agent-discovery/discover.mjs')) { throw "Local Claude/Codex inventory module missing" }
+          if (-not ($entries -match 'agent-discovery/claude-sdk-adapter.mjs')) { throw "Claude SDK adapter missing" }
+          "EXECUTABLE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Start packaged application offline (no provider traffic)
+        timeout-minutes: 2
+        run: |
+          $proc = Start-Process -FilePath $env:EXECUTABLE -ArgumentList '--offline-smoke' -PassThru -Wait
+          if ($proc.ExitCode -ne 0) { throw "Desktop offline startup failed with exit code $($proc.ExitCode)" }
+      - name: Zip portable preview
+        run: |
+          $build = Get-ChildItem -Path dist -Directory | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Compress-Archive -Path (Join-Path $build.FullName "*") -DestinationPath "artifact\AI-Workspace-Preview-Windows-x64.zip" -CompressionLevel Optimal
+          if (-not (Test-Path "artifact\AI-Workspace-Preview-Windows-x64.zip")) { throw "Missing distribution zip" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Workspace-Preview-Windows-x64
+          path: experiments/desktop-spike/artifact/AI-Workspace-Preview-Windows-x64.zip
+          retention-days: 14
