@@ -30,6 +30,7 @@ async function shellFixture() {
     }
     static nextId = 1;
     setWindowOpenHandler(handler) { this.popupHandler = handler; }
+    getURL() { return this.loaded.at(-1) || ""; }
     async loadURL(url) { this.loaded.push(url); }
     isDestroyed() { return this.closed; }
     close() { this.closed = true; }
@@ -78,7 +79,9 @@ async function shellFixture() {
       return item;
     },
   };
-  const mockElectron = { app, BrowserWindow: FakeWindow, WebContentsView: FakeView, ipcMain, session };
+  const openedExternal=[];
+  const shell={async openExternal(url){openedExternal.push(url);}};
+  const mockElectron = { app, BrowserWindow: FakeWindow, WebContentsView: FakeView, ipcMain, session, shell };
   const sandbox = {
     require(id) {
       if (id === "electron") return mockElectron;
@@ -100,7 +103,7 @@ async function shellFixture() {
     views, partitions, windows, handlers, window,
     sender: { sender: { id: window.webContents.id } },
     otherSender: { sender: { id: -99 } },
-    app,
+    app, openedExternal,
   };
 }
 
@@ -168,6 +171,22 @@ test("REL-013: provider view only allows HTTPS navigation, does not grant popup 
   prevented = false;
   listeners[0]({preventDefault(){prevented = true;}}, "https://chatgpt.com/c/123");
   assert.equal(prevented, false);
+});
+
+
+test("CON-001 REL-013: native browser fallback opens only canonical provider URLs", async () => {
+  const f=await shellFixture();
+  const open=f.handlers.get("spike:open-native-browser");
+  // A provider conversation URL keeps path, not potentially sensitive query params.
+  f.views[0].webContents.loaded.push("https://chatgpt.com/c/012345?token=do-not-leak#fragment");
+  assert.deepEqual(await open(f.sender,"left"),{opened:true,provider:"chatgpt"});
+  assert.deepEqual(f.openedExternal,["https://chatgpt.com/c/012345"]);
+  // Navigation to a third-party login service must not leak its URL/parameters.
+  f.views[0].webContents.loaded.push("https://accounts.google.com/o/oauth2/v2/auth?secret=private");
+  await open(f.sender,"left");
+  assert.equal(f.openedExternal.at(-1),"https://chatgpt.com/");
+  await assert.rejects(open(f.otherSender,"left"),/Unrecognized pane/);
+  await assert.rejects(open(f.sender,"bogus"),/Unrecognized pane/);
 });
 
 test("AGENT-003: external agent launch IPC cannot be called by a provider webpage", async () => {
