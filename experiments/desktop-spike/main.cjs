@@ -6,7 +6,7 @@
  * Limitations: provider login/OAuth/popup flows are NOT validated on Windows;
  * provider UI may block embedded web clients. No live terminal/resume support.
  */
-const { app, BrowserWindow, WebContentsView, ipcMain, session } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, session, shell } = require("electron");
 const path = require("node:path");
 const { openAgentTerminal } = require("./agent-actions.cjs");
 
@@ -172,6 +172,27 @@ app.whenReady().then(async () => {
     layout = next;
     layoutViews();
     return layout;
+  });
+
+  ipcMain.handle("spike:open-native-browser", async (event, pane = "left") => {
+    if (!ownsSender(event) || !["left", "right"].includes(pane))
+      throw new Error("Unrecognized pane.");
+    const provider = selected[pane];
+    const view = views.get(pane + ":" + provider);
+    let url = URLS[provider];
+    if (view) {
+      // Forward only canonical provider URL, NEVER OAuth callback queries,
+      // tokens, login-provider paths or arbitrary websites.
+      try {
+        const current = new URL(view.webContents.getURL());
+        const home = new URL(URLS[provider]);
+        if (current.protocol === "https:" && current.hostname === home.hostname) {
+          url = current.origin + current.pathname;
+        }
+      } catch {}
+    }
+    await shell.openExternal(url);
+    return { opened: true, provider };
   });
 
   ipcMain.handle("spike:list-agents", async (event) => {
