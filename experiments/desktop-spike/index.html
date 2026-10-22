@@ -47,6 +47,10 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
     <option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option>
   </select>
   <p class="hint">Choose <b>Two chats</b> or <b>Stack chats</b> to display two genuine provider webpages simultaneously—even two different chats from the same provider. Choose <b>Chat + local agents</b> to display your local Claude Code/Codex session inventory beside a genuine provider webpage.</p>
+  <h2>Open original browser</h2>
+  <p class="hint">If a provider blocks embedded sign-in or a feature doesn't work, continue in your normal browser. We won't import browser cookies.</p>
+  <button class="refresh" id="openBrowserLeft">Open left chat in browser</button>
+  <button class="refresh" id="openBrowserRight">Open right chat in browser</button>
   <h2>Local session discovery</h2>
   <p class="hint">Reads metadata from local session files. No AI calls, prompts, retries, or background syncing.</p>
   <button class="refresh" id="refresh">Refresh local sessions</button>
@@ -133,6 +137,16 @@ for (const pane of ["left","right"]) {
   });
 }
 $("refresh").addEventListener("click", refreshAgents);
+for (const pane of ["left","right"]) {
+  const button = $("openBrowser" + pane[0].toUpperCase() + pane.slice(1));
+  button.addEventListener("click", async () => {
+    try {
+      const result = await window.aiWorkspace.openNativeBrowser(pane);
+      setMessage("Opened " + result.provider + " in the default browser.");
+    } catch (error) { setMessage(error.message || String(error)); }
+  });
+}
+
 $("resume").addEventListener("click", async () => {
   const agent = selectedAgent;
   if (!agent || !agent.cwd) return;
