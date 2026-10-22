@@ -83,6 +83,7 @@ async function shellFixture() {
     require(id) {
       if (id === "electron") return mockElectron;
       if (id === "node:path") return path;
+      if (id === "./agent-actions.cjs") return { openAgentTerminal: async () => { throw Error("Fake must never start a real agent."); } };
       throw Error("Unexpected native module: " + id);
     },
     __dirname: DIR,
@@ -167,6 +168,16 @@ test("REL-013: provider view only allows HTTPS navigation, does not grant popup 
   prevented = false;
   listeners[0]({preventDefault(){prevented = true;}}, "https://chatgpt.com/c/123");
   assert.equal(prevented, false);
+});
+
+test("AGENT-003: external agent launch IPC cannot be called by a provider webpage", async () => {
+  const f = await shellFixture();
+  assert.ok(f.handlers.has("spike:resume-agent"));
+  await assert.rejects(
+    f.handlers.get("spike:resume-agent")(f.otherSender, "claude-code",
+      "11111111-1111-4111-8111-111111111111"),
+    /Unknown window/
+  );
 });
 
 test("REL-013: unrecognized sender, provider, pane, and layout denied before loading", async () => {
