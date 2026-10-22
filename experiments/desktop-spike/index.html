@@ -33,6 +33,7 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
   <div class="controls" role="group" aria-label="Layout">
     <button data-layout="single" aria-pressed="false">One chat</button>
     <button data-layout="split" aria-pressed="false">Two chats</button>
+    <button data-layout="stack" aria-pressed="false">Stack chats</button>
     <button data-layout="agent" aria-pressed="true">Chat + local agents</button>
   </div>
 </header>
@@ -45,7 +46,7 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
   <select id="right" aria-label="Right provider">
     <option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option>
   </select>
-  <p class="hint">Choose <b>Two chats</b> to display two genuine provider webpages simultaneously. Choose <b>Chat + local agents</b> to display your local Claude Code/Codex session inventory beside a genuine provider webpage.</p>
+  <p class="hint">Choose <b>Two chats</b> or <b>Stack chats</b> to display two genuine provider webpages simultaneously—even two different chats from the same provider. Choose <b>Chat + local agents</b> to display your local Claude Code/Codex session inventory beside a genuine provider webpage.</p>
   <h2>Local session discovery</h2>
   <p class="hint">Reads metadata from local session files. No AI calls, prompts, retries, or background syncing.</p>
   <button class="refresh" id="refresh">Refresh local sessions</button>
