@@ -191,13 +191,29 @@ test("REL-013: unrecognized sender, provider, pane, and layout denied before loa
   assert.equal(f.views.length, before);
 });
 
-test("CON-015: same provider in both panes is explicitly rejected rather than silently reusing one view", async () => {
+test("CON-015: same provider can show two independent native conversations", async () => {
   const f = await shellFixture();
   await f.handlers.get("spike:set-layout")(f.sender, "split");
-  await assert.rejects(f.handlers.get("spike:select-provider")(f.sender, "claude", "left"), /different providers/);
-  await f.handlers.get("spike:set-layout")(f.sender, "single");
   await f.handlers.get("spike:select-provider")(f.sender, "claude", "left");
-  assert.throws(() => f.handlers.get("spike:set-layout")(f.sender, "split"), /two different providers/);
+  const last = f.views.at(-1);
+  assert.equal(last.webContents.loaded[0], "https://claude.ai/");
+  assert.equal(f.views.filter(view => view.webContents.loaded[0] === "https://claude.ai/").length, 2);
+  assert.equal(f.partitions.at(-1).partition, "persist:ai-workspace-spike-claude");
+  assert.notEqual(f.views[1].webContents.id, last.webContents.id,
+    "Each pane needs an independently navigable WebContents");
+});
+
+test("CON-015: stacked layout assigns each conversation half of the available height", async () => {
+  const f = await shellFixture();
+  assert.equal(await f.handlers.get("spike:set-layout")(f.sender, "stack"), "stack");
+  const a = f.views[0].bounds.at(-1);
+  const b = f.views[1].bounds.at(-1);
+  assert.equal(a.x,270);
+  assert.equal(b.x,270);
+  assert.equal(a.y,64);
+  assert.equal(b.y,64+a.height);
+  assert.equal(a.height+b.height,f.window.height-64);
+  assert.equal(a.width,b.width);
 });
 
 test("REL-013: app quits only when the window-all-closed event occurs; no background sync worker", async () => {
