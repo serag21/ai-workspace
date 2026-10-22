@@ -88,6 +88,7 @@ async function shellFixture() {
     __dirname: DIR,
     URL,
     console,
+    process: { argv: ["electron", "main.cjs"], stdout: { write() {} } },
   };
   vm.runInNewContext(script, sandbox, { filename: "main.cjs" });
   for (let i = 0; i < 10 && windows.length === 0; i++)
