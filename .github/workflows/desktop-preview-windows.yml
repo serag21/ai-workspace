@@ -43,10 +43,13 @@ jobs:
           if ($null -eq $exe) { throw "No Windows executable produced" }
           $asar = Join-Path $build.FullName "resources\app.asar"
           if (-not (Test-Path $asar)) { throw "Missing application archive" }
-          npx --yes @electron/asar list $asar | Select-String "agent-discovery/(discover|claude-sdk-adapter).mjs" | Out-Host
-          $entries = npx --yes @electron/asar list $asar
-          if (-not ($entries -match 'agent-discovery/discover.mjs')) { throw "Local Claude/Codex inventory module missing" }
-          if (-not ($entries -match 'agent-discovery/claude-sdk-adapter.mjs')) { throw "Claude SDK adapter missing" }
+          $entries = @(npx --yes @electron/asar list $asar)
+          if ($LASTEXITCODE -ne 0) { throw "Failed to inspect application ASAR" }
+          Write-Host "Archive contains $($entries.Count) entries"
+          $entries | Select-String -Pattern 'agent-discovery|discover\.mjs|claude-sdk-adapter' | Out-Host
+          $flatEntries = ($entries -join "`n") -replace '\\','/'
+          if ($flatEntries -notmatch 'agent-discovery/discover\.mjs') { throw "Local Claude/Codex inventory module missing from ASAR" }
+          if ($flatEntries -notmatch 'agent-discovery/claude-sdk-adapter\.mjs') { throw "Claude SDK adapter missing from ASAR" }
           "EXECUTABLE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Start packaged application offline (no provider traffic)
         timeout-minutes: 2
