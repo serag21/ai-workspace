@@ -8,6 +8,7 @@
  */
 const { app, BrowserWindow, WebContentsView, ipcMain, session } = require("electron");
 const path = require("node:path");
+const { openAgentTerminal } = require("./agent-actions.cjs");
 
 const URLS = Object.freeze({
   chatgpt: "https://chatgpt.com/",
@@ -121,28 +122,7 @@ async function createWindow() {
   if (!process.argv.includes("--offline-smoke")) layoutViews();
 }
 
-app.whenReady().then(async () => {
-  ipcMain.handle("spike:select-provider", async (event, provider, pane = "left") => {
-    if (!ownsSender(event) || !Object.hasOwn(URLS, provider) || !["left", "right"].includes(pane))
-      throw new Error("Invalid provider selection.");
-    if (layout === "split" && selected[pane === "left" ? "right" : "left"] === provider)
-      throw new Error("Choose two different providers for the split-view prototype.");
-    selected[pane] = provider;
-    layoutViews();
-    return { provider, pane };
-  });
-
-  ipcMain.handle("spike:set-layout", (event, next) => {
-    if (!ownsSender(event) || !LAYOUTS.has(next)) throw new Error("Invalid layout.");
-    if (next === "split" && selected.left === selected.right)
-      throw new Error("Select two different providers before entering split mode.");
-    layout = next;
-    layoutViews();
-    return layout;
-  });
-
-  ipcMain.handle("spike:list-agents", async (event) => {
-    if (!ownsSender(event)) throw new Error("Unknown window.");
+async function readLocalAgents() {
     const { discoverLocalAgents } = await import("./agent-discovery/discover.mjs");
     const fallbackInventory = await discoverLocalAgents({ limit: 150 });
     // Prefer official SDK transcript metadata when the optional SDK is present.
@@ -166,6 +146,43 @@ app.whenReady().then(async () => {
       console.warn("Claude SDK unavailable; using bounded local metadata inventory:", error?.message);
       return fallbackInventory.slice(0,100);
     }
+}
+
+app.whenReady().then(async () => {
+  ipcMain.handle("spike:select-provider", async (event, provider, pane = "left") => {
+    if (!ownsSender(event) || !Object.hasOwn(URLS, provider) || !["left", "right"].includes(pane))
+      throw new Error("Invalid provider selection.");
+    if (layout === "split" && selected[pane === "left" ? "right" : "left"] === provider)
+      throw new Error("Choose two different providers for the split-view prototype.");
+    selected[pane] = provider;
+    layoutViews();
+    return { provider, pane };
+  });
+
+  ipcMain.handle("spike:set-layout", (event, next) => {
+    if (!ownsSender(event) || !LAYOUTS.has(next)) throw new Error("Invalid layout.");
+    if (next === "split" && selected.left === selected.right)
+      throw new Error("Select two different providers before entering split mode.");
+    layout = next;
+    layoutViews();
+    return layout;
+  });
+
+  ipcMain.handle("spike:list-agents", async (event) => {
+    if (!ownsSender(event)) throw new Error("Unknown window.");
+    return readLocalAgents();
+  });
+
+  ipcMain.handle("spike:resume-agent", async (event, provider, sessionId) => {
+    if (!ownsSender(event)) throw new Error("Unknown window.");
+    if (typeof provider !== "string" || typeof sessionId !== "string")
+      throw new Error("Invalid session selection.");
+    // Never accept a renderer-supplied executable or working directory.
+    const sessions = await readLocalAgents();
+    const chosen = sessions.find(item => item.provider === provider &&
+      item.sessionId === sessionId && item.cwd);
+    if (!chosen) throw new Error("Session unavailable or without a verified local project folder.");
+    return openAgentTerminal(chosen);
   });
 
   await createWindow();
