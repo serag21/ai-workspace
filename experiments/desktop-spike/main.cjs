@@ -15,7 +15,7 @@ const URLS = Object.freeze({
   claude: "https://claude.ai/",
   gemini: "https://gemini.google.com/app",
 });
-const LAYOUTS = new Set(["single", "split", "agent"]);
+const LAYOUTS = new Set(["single", "split", "stack", "agent"]);
 const LEFT_RAIL = 270;
 const TOP_BAR = 64;
 
@@ -24,8 +24,9 @@ let layout = "agent";
 const selected = { left: "chatgpt", right: "claude" };
 const views = new Map();
 
-function createProviderView(provider) {
-  const existing = views.get(provider);
+function createProviderView(provider, pane = "left") {
+  const viewKey = pane + ":" + provider;
+  const existing = views.get(viewKey);
   if (existing) return existing;
 
   // These persistent partitions are isolated from each other AND from the
@@ -52,7 +53,7 @@ function createProviderView(provider) {
   view.webContents.on("will-attach-webview", (event) => event.preventDefault());
   windowRef.contentView.addChildView(view);
   view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-  views.set(provider, view);
+  views.set(viewKey, view);
   void view.webContents.loadURL(URLS[provider]).catch((error) => {
     // Failure is surfaced in the main-process console for this prototype.
     console.error("Provider page failed to load:", provider, error.message);
@@ -69,18 +70,27 @@ function layoutViews() {
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
   }
 
-  const first = createProviderView(selected.left);
+  const first = createProviderView(selected.left, "left");
   if (layout === "single") {
     first.setBounds({ x: LEFT_RAIL, y: TOP_BAR, width: usableWidth, height: usableHeight });
   } else {
     const half = Math.floor(usableWidth / 2);
     first.setBounds({ x: LEFT_RAIL, y: TOP_BAR, width: half, height: usableHeight });
-    if (layout === "split") {
-      const second = createProviderView(selected.right);
-      // Same-provider twin views would represent the SAME live page, not two
-      // independently navigable conversations. Require two distinct providers.
-      second.setBounds({ x: LEFT_RAIL + half, y: TOP_BAR,
-        width: usableWidth - half, height: usableHeight });
+    if (layout === "split" || layout === "stack") {
+      // Separate WebContents instances allow two DIFFERENT chats from the
+      // SAME provider to be visible at once, while sharing that provider's
+      // isolated login partition. They are not iframe or transcript clones.
+      const second = createProviderView(selected.right, "right");
+      if (layout === "split") {
+        second.setBounds({ x: LEFT_RAIL + half, y: TOP_BAR,
+          width: usableWidth - half, height: usableHeight });
+      } else {
+        const halfHeight = Math.floor(usableHeight / 2);
+        first.setBounds({ x: LEFT_RAIL, y: TOP_BAR,
+          width: usableWidth, height: halfHeight });
+        second.setBounds({ x: LEFT_RAIL, y: TOP_BAR + halfHeight,
+          width: usableWidth, height: usableHeight - halfHeight });
+      }
     }
     // "agent" mode: right side stays visible as the app's read-only agent pane.
   }
@@ -152,8 +162,6 @@ app.whenReady().then(async () => {
   ipcMain.handle("spike:select-provider", async (event, provider, pane = "left") => {
     if (!ownsSender(event) || !Object.hasOwn(URLS, provider) || !["left", "right"].includes(pane))
       throw new Error("Invalid provider selection.");
-    if (layout === "split" && selected[pane === "left" ? "right" : "left"] === provider)
-      throw new Error("Choose two different providers for the split-view prototype.");
     selected[pane] = provider;
     layoutViews();
     return { provider, pane };
@@ -161,8 +169,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("spike:set-layout", (event, next) => {
     if (!ownsSender(event) || !LAYOUTS.has(next)) throw new Error("Invalid layout.");
-    if (next === "split" && selected.left === selected.right)
-      throw new Error("Select two different providers before entering split mode.");
     layout = next;
     layoutViews();
     return layout;
