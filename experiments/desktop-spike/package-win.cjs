@@ -1,5 +1,5 @@
 // Portable, UNSIGNED experimental Windows package. Not an installer or public release.
-const packager = require("@electron/packager");
+const { packager } = require("@electron/packager");
 const path = require("node:path");
 
 (async () => {
