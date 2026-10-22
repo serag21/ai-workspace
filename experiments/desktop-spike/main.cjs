@@ -117,7 +117,8 @@ async function createWindow() {
   });
 
   await windowRef.loadFile(path.join(__dirname, "index.html"));
-  layoutViews();
+  // Offline smoke validates startup/packaging without connecting to provider accounts.
+  if (!process.argv.includes("--offline-smoke")) layoutViews();
 }
 
 app.whenReady().then(async () => {
@@ -142,13 +143,13 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("spike:list-agents", async (event) => {
     if (!ownsSender(event)) throw new Error("Unknown window.");
-    const { discoverLocalAgents } = await import("../local-agent-probe/discover.mjs");
+    const { discoverLocalAgents } = await import("./agent-discovery/discover.mjs");
     const fallbackInventory = await discoverLocalAgents({ limit: 150 });
     // Prefer official SDK transcript metadata when the optional SDK is present.
     // Neither this nor the fallback executes agents or sends any prompts.
     try {
       const { loadClaudeSessionSdk, listClaudeSessionsReadOnly } =
-        await import("../local-agent-probe/claude-sdk-adapter.mjs");
+        await import("./agent-discovery/claude-sdk-adapter.mjs");
       const sdk = await loadClaudeSessionSdk();
       const claudeSessions = await listClaudeSessionsReadOnly({ sdk, limit: 150 });
       const byId = new Map(fallbackInventory.map((item) => [item.id, item]));
@@ -168,6 +169,10 @@ app.whenReady().then(async () => {
   });
 
   await createWindow();
+  if (process.argv.includes("--offline-smoke")) {
+    process.stdout.write("AI_WORKSPACE_OFFLINE_SMOKE_OK\n");
+    app.quit();
+  }
 }).catch((error) => console.error("Desktop spike failed:", error));
 
 app.on("window-all-closed", () => app.quit());
