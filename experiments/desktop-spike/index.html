@@ -50,20 +50,26 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
   <p class="hint">Reads metadata from local session files. No AI calls, prompts, retries, or background syncing.</p>
   <button class="refresh" id="refresh">Refresh local sessions</button>
   <p id="message" role="status"></p>
-  <div class="caution">Experimental only. Provider sign-in, OAuth popups, full attachments, voice, and agent continuation have not been verified. Provider websites may reject embedded browsers. Don't use this for irreplaceable work yet.</div>
+  <div class="caution">Experimental only. Provider sign-in, OAuth popups, full attachments, voice, and in-app agent continuation have not been verified. Provider websites may reject embedded browsers. Don't use this for irreplaceable work yet.</div>
 </aside>
 <section id="agentPane" class="agent-pane" aria-label="Local coding-agent sessions">
   <h2>Local coding agents</h2>
   <p class="sub">Claude Code + Codex · read-only · most recently modified</p>
   <div id="agentList">Scanning local metadata…</div>
   <pre class="detail" id="agentDetail" hidden></pre>
+  <button class="refresh" id="resume" hidden>Resume in Windows terminal</button>
 </section>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
+let selectedAgent = null;
 function setMessage(message){ $("message").textContent = String(message || ""); }
 function printDetails(agent){
+  selectedAgent = agent;
   $("agentDetail").hidden = false;
+  $("resume").hidden = false;
+  $("resume").disabled = !agent.cwd || !["claude-code","codex"].includes(agent.provider);
+  $("resume").title = agent.cwd ? "Open a separate terminal with this saved session. Does not auto-send a prompt." : "Missing original working directory";
   $("agentDetail").textContent = [
     agent.provider + " | " + agent.sessionId,
     "Title: " + agent.title,
@@ -73,10 +79,14 @@ function printDetails(agent){
     "Active status: unknown (not tracked)",
     "Local transcript: " + agent.file,
     "",
-    "This prototype never executes a prompt. Live attach/resume is the next experiment."
+    "Resume opens the official CLI in a separate terminal only after confirmation.",
+    "There is no automatic prompt sending and no in-app live agent control yet."
   ].join("\n");
 }
 async function refreshAgents(){
+  selectedAgent = null;
+  $("resume").hidden = true;
+  $("agentDetail").hidden = true;
   const parent = $("agentList");
   parent.textContent = "Reading local metadata…";
   try {
@@ -122,6 +132,17 @@ for (const pane of ["left","right"]) {
   });
 }
 $("refresh").addEventListener("click", refreshAgents);
+$("resume").addEventListener("click", async () => {
+  const agent = selectedAgent;
+  if (!agent || !agent.cwd) return;
+  if (!window.confirm("Open this saved " + agent.provider + " session in a separate Windows terminal?\n\nProject: " + agent.cwd + "\n\nNo prompt will be sent automatically.")) return;
+  $("resume").disabled = true;
+  try {
+    const result = await window.aiWorkspace.resumeAgent(agent.provider, agent.sessionId);
+    setMessage("Opened an external Windows terminal for " + result.provider + ". CLI status has not been verified.");
+  } catch (error) { setMessage(error.message || String(error)); }
+  finally { $("resume").disabled = false; }
+});
 void refreshAgents();
 </script>
 </body></html>
