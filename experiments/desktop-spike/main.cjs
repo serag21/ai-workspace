@@ -9,6 +9,7 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, session, shell } = require("electron");
 const path = require("node:path");
 const { openAgentTerminal } = require("./agent-actions.cjs");
+const { browserDestination } = require("./provider-navigation.cjs");
 
 const URLS = Object.freeze({
   chatgpt: "https://chatgpt.com/",
@@ -179,20 +180,12 @@ app.whenReady().then(async () => {
       throw new Error("Unrecognized pane.");
     const provider = selected[pane];
     const view = views.get(pane + ":" + provider);
-    let url = URLS[provider];
-    if (view) {
-      // Forward only canonical provider URL, NEVER OAuth callback queries,
-      // tokens, login-provider paths or arbitrary websites.
-      try {
-        const current = new URL(view.webContents.getURL());
-        const home = new URL(URLS[provider]);
-        if (current.protocol === "https:" && current.hostname === home.hostname) {
-          url = current.origin + current.pathname;
-        }
-      } catch {}
-    }
-    await shell.openExternal(url);
-    return { opened: true, provider };
+    // Preserve only explicitly recognized conversation routes. Never pass an
+    // OAuth/login path, arbitrary same-origin path, query, or fragment to the
+    // external browser. An unsupported route falls back to provider home.
+    const destination = browserDestination(provider, view?.webContents.getURL());
+    await shell.openExternal(destination.url);
+    return { opened: true, provider, preservedConversation: destination.preservedConversation };
   });
 
   ipcMain.handle("spike:list-agents", async (event) => {
