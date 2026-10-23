@@ -22,10 +22,13 @@ jobs:
         run: node --test experiments/desktop-spike/agent-actions.test.mjs
       - name: Desktop main-process behavior tests (fake Electron; no provider traffic)
         run: node --test experiments/desktop-spike/main.test.mjs
+      - name: Native browser fallback route security (synthetic; no provider requests)
+        run: node --test experiments/desktop-spike/provider-navigation.test.mjs
       - name: Electron main and preload syntax
         run: |
           node --check experiments/desktop-spike/main.cjs
           node --check experiments/desktop-spike/preload.cjs
+          node --check experiments/desktop-spike/provider-navigation.cjs
       - name: Desktop UI script syntax
         run: |
           node --input-type=module -e "import fs from 'node:fs'; const html=fs.readFileSync('experiments/desktop-spike/index.html','utf8'); const script=html.match(/<script>([\s\S]*?)<\/script>/); if (!script) throw Error('Missing desktop UI script'); new Function(script[1]);"
