@@ -5,6 +5,8 @@ import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import vm from "node:vm";
+import { createRequire } from "node:module";
+const requireNavigation = createRequire(import.meta.url)("./provider-navigation.cjs");
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const script = await readFile(path.join(DIR, "main.cjs"), "utf8");
@@ -87,6 +89,7 @@ async function shellFixture() {
       if (id === "electron") return mockElectron;
       if (id === "node:path") return path;
       if (id === "./agent-actions.cjs") return { openAgentTerminal: async () => { throw Error("Fake must never start a real agent."); } };
+      if (id === "./provider-navigation.cjs") return requireNavigation;
       throw Error("Unexpected native module: " + id);
     },
     __dirname: DIR,
@@ -178,13 +181,23 @@ test("CON-001 REL-013: native browser fallback opens only canonical provider URL
   const f=await shellFixture();
   const open=f.handlers.get("spike:open-native-browser");
   // A provider conversation URL keeps path, not potentially sensitive query params.
-  f.views[0].webContents.loaded.push("https://chatgpt.com/c/012345?token=do-not-leak#fragment");
+  const threadId = "01234567-89ab-4cde-8fab-0123456789ab";
+  f.views[0].webContents.loaded.push("https://chatgpt.com/c/" + threadId + "?token=do-not-leak#fragment");
   const result=await open(f.sender,"left");
   assert.equal(result.opened,true);
   assert.equal(result.provider,"chatgpt");
-  assert.deepEqual(f.openedExternal,["https://chatgpt.com/c/012345"]);
+  assert.equal(result.preservedConversation,true);
+  assert.deepEqual(f.openedExternal,["https://chatgpt.com/c/" + threadId]);
   // Navigation to a third-party login service must not leak its URL/parameters.
   f.views[0].webContents.loaded.push("https://accounts.google.com/o/oauth2/v2/auth?secret=private");
+  await open(f.sender,"left");
+  assert.equal(f.openedExternal.at(-1),"https://chatgpt.com/");
+  // A same-origin login callback must never be opened with a code in its path.
+  f.views[0].webContents.loaded.push("https://chatgpt.com/auth/callback/code/secret-in-path");
+  const fallback = await open(f.sender,"left");
+  assert.equal(fallback.preservedConversation,false);
+  assert.equal(f.openedExternal.at(-1),"https://chatgpt.com/");
+  f.views[0].webContents.loaded.push("https://chatgpt.com/c/not-a-uuid");
   await open(f.sender,"left");
   assert.equal(f.openedExternal.at(-1),"https://chatgpt.com/");
   await assert.rejects(open(f.otherSender,"left"),/Unrecognized pane/);
