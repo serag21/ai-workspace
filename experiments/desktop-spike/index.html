@@ -84,6 +84,8 @@ function printDetails(agent){
     "Active status: unknown (not tracked)",
     "Local transcript: " + agent.file,
     "",
+    "WARNING: Live ownership is unknown. Resume ONLY a session verified inactive.",
+    "Launching a second CLI for an active session can conflict with ongoing work.",
     "Resume opens the official CLI in a separate terminal only after confirmation.",
     "There is no automatic prompt sending and no in-app live agent control yet."
   ].join("\n");
@@ -150,7 +152,7 @@ for (const pane of ["left","right"]) {
 $("resume").addEventListener("click", async () => {
   const agent = selectedAgent;
   if (!agent || !agent.cwd) return;
-  if (!window.confirm("Open this saved " + agent.provider + " session in a separate Windows terminal?\n\nProject: " + agent.cwd + "\n\nNo prompt will be sent automatically.")) return;
+  if (!window.confirm("Resume this " + agent.provider + " session in a separate Windows terminal?\n\nProject: " + agent.cwd + "\n\nIMPORTANT: The app cannot verify whether this session is already running. Resume ONLY if you have confirmed it is inactive. A second CLI may conflict with active work.\n\nThis app sends no prompt, but the official CLI may continue pending work.")) return;
   $("resume").disabled = true;
   try {
     const result = await window.aiWorkspace.resumeAgent(agent.provider, agent.sessionId);
