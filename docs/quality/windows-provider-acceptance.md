@@ -37,6 +37,8 @@ The read-only discovery implementation now limits concurrent transcript metadata
 
 On a Windows host with a representative existing Claude Code/Codex history, measure the time to first inventory, a second refresh, UI responsiveness while refreshing, and whether the official clients remain usable. Record only elapsed time, session counts and coarse CPU/memory/handle observations—not transcript text, paths or account identifiers. Repeat with a large disposable fixture if feasible; do not manufacture or overwrite actual agent histories. Treat excessive latency, UI hangs, open-file errors or unexpected process launches as failures requiring remediation.
 
+The resume path now refuses to launch when a project directory contains a command name that could shadow `claude`, `codex` or `cmd.exe`. This is a synthetic-tested mitigation, **not** a complete audit of Windows `PATH`, `ComSpec`, shell command resolution or executable provenance. Verify that the expected official CLI actually launches on Windows before trusting the feature.
+
 The **Resume in Windows terminal** button is not safe attachment to an active process. The app cannot currently prove session ownership or activity status. Only test on a known inactive disposable session after confirming the project and reading the warning; never use an actively running session to validate resume. A CLI can potentially continue its own pending work even though the app sends no prompt.
 
 ## REL-001 / issue #3 — first-party interference control
