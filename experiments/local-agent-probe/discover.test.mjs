@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { discoverLocalAgents } from "./discover.mjs";
+import { discoverLocalAgents, mapBounded } from "./discover.mjs";
 
 const CLAUDE_ID = "11111111-1111-4111-8111-111111111111";
 const CODEX_ID = "22222222-2222-4222-8222-222222222222";
@@ -81,4 +81,31 @@ test("limits result count and ignores malformed files", async () => {
     const found = await discoverLocalAgents({claudeRoot:f.claudeRoot,codexRoot:f.codexRoot,limit:1});
     assert.equal(found.length,1);
   } finally { await rm(f.root,{recursive:true,force:true}); }
+});
+
+test("REL-009 AGENT-001: inventory worker pool caps simultaneous reads and preserves order", async () => {
+  let active = 0;
+  let peak = 0;
+  const values = Array.from({length: 64}, (_, i) => i);
+  const results = await mapBounded(values, 3, async value => {
+    active++;
+    peak = Math.max(peak, active);
+    try {
+      // Vary completion order so a Promise.all replacement cannot pass on luck.
+      await new Promise(resolve => setTimeout(resolve, (value % 4) + 1));
+      return value * 2;
+    } finally {
+      active--;
+    }
+  });
+  assert.deepEqual(results, values.map(value => value * 2));
+  assert.ok(peak > 1, "Worker pool should make progress concurrently.");
+  assert.ok(peak <= 3, "Worker pool must never exceed its concurrency budget.");
+  assert.equal(active, 0);
+});
+
+test("REL-009: bounded inventory handles empty work and rejects invalid limits", async () => {
+  assert.deepEqual(await mapBounded([], 3, async () => { throw Error("not called"); }), []);
+  await assert.rejects(mapBounded([1], 0, async x => x), /positive concurrency/);
+  await assert.rejects(mapBounded([1], 1.5, async x => x), /positive concurrency/);
 });
