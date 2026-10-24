@@ -7,7 +7,7 @@
  * canonical local session record by UUID and verifies the directory.
  */
 const { spawn } = require("node:child_process");
-const { stat, realpath } = require("node:fs/promises");
+const { stat, realpath, readdir } = require("node:fs/promises");
 const path = require("node:path");
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,7 +16,7 @@ const COMMANDS = Object.freeze({
   "codex": {program: "codex", args: id => ["resume", id]},
 });
 
-async function prepareAgentResume(session, {platform = process.platform, statFn = stat, realpathFn = realpath} = {}) {
+async function prepareAgentResume(session, {platform = process.platform, statFn = stat, realpathFn = realpath, readdirFn = readdir} = {}) {
   if (platform !== "win32") throw new Error("External terminal resume is currently supported on Windows only.");
   if (!session || !Object.hasOwn(COMMANDS,session.provider) ||
       typeof session.sessionId !== "string" || !UUID.test(session.sessionId)) {
@@ -31,6 +31,19 @@ async function prepareAgentResume(session, {platform = process.platform, statFn 
   const info = await statFn(cwd);
   if (!info.isDirectory()) throw new Error("The session's working directory is not a folder.");
   const entry = COMMANDS[session.provider];
+  // cmd.exe searches its working directory before PATH. A project checkout
+  // containing e.g. claude.cmd or codex.exe could otherwise hijack a resume.
+  // Fail closed if a matching executable is present, including custom PATHEXT.
+  const extensions = new Set([".com", ".exe", ".bat", ".cmd"]);
+  for (const ext of (process.env.PATHEXT || "").split(";")) {
+    if (/^\.[a-z0-9]{1,8}$/i.test(ext)) extensions.add(ext.toLowerCase());
+  }
+  const shadowNames = new Set([entry.program, "cmd.exe",
+    ...[...extensions].map(ext => entry.program + ext)]);
+  const names = await readdirFn(cwd);
+  if (names.some(name => typeof name === "string" && shadowNames.has(name.toLowerCase()))) {
+    throw new Error("Project folder contains a command that could shadow the installed CLI. Resume refused.");
+  }
   return {
     executable: process.env.ComSpec || "cmd.exe",
     args: ["/k", entry.program, ...entry.args(session.sessionId)],
