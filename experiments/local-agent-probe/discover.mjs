@@ -12,6 +12,28 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MAX_FILES = 2500;
 const MAX_HEAD_BYTES = 192 * 1024;
 const MAX_TITLE = 120;
+// A bounded worker pool prevents thousands of simultaneous transcript opens on
+// large local histories. Inventory remains read-only; never start agent processes.
+const MAX_CONCURRENT_READS = 12;
+
+/** Preserve input order while bounding active asynchronous filesystem work. */
+export async function mapBounded(items, concurrency, mapper) {
+  if (!Array.isArray(items) || typeof mapper !== "function" ||
+      !Number.isInteger(concurrency) || concurrency < 1) {
+    throw new TypeError("Expected an array, positive concurrency and mapper.");
+  }
+  const results = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+  await Promise.all(Array.from(
+    { length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
 
 function compact(value) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, MAX_TITLE) : "";
@@ -114,14 +136,21 @@ export async function discoverLocalAgents({
     findFiles(path.join(claudeRoot, "projects"), 2, (n) => UUID_RE.test(path.basename(n, ".jsonl")) && n.endsWith(".jsonl")),
     findFiles(path.join(codexRoot, "sessions"), 4, (n) => n.startsWith("rollout-") && n.endsWith(".jsonl")),
   ]);
-  const candidates = await Promise.all([
-    ...claudeFiles.map(async (file) => {
-      try { const s = await stat(file); return metadataForClaude(file, await headRecords(file), s.mtimeMs); } catch { return null; }
-    }),
-    ...codexFiles.map(async (file) => {
-      try { const s = await stat(file); return metadataForCodex(file, await headRecords(file), s.mtimeMs); } catch { return null; }
-    }),
-  ]);
+  // Do not open thousands of files at once: a busy Windows host can otherwise
+  // hit handle limits and suffer unnecessary disk/CPU contention during refresh.
+  const files = [
+    ...claudeFiles.map(file => ({ file, provider: "claude-code" })),
+    ...codexFiles.map(file => ({ file, provider: "codex" })),
+  ];
+  const candidates = await mapBounded(files, MAX_CONCURRENT_READS, async ({ file, provider }) => {
+    try {
+      const s = await stat(file);
+      const records = await headRecords(file);
+      return provider === "claude-code"
+        ? metadataForClaude(file, records, s.mtimeMs)
+        : metadataForCodex(file, records, s.mtimeMs);
+    } catch { return null; }
+  });
   const byId = new Map();
   for (const candidate of candidates) {
     if (!candidate) continue;
