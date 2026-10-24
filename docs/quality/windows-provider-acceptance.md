@@ -31,6 +31,14 @@ For **each provider**, record the app version, Windows version, provider, exact 
 4. Confirm no agent process is silently owned or terminated by the desktop preview. Check that exiting the preview does not stop a pre-existing independent agent.
 5. Mark live in-app streaming, approval handling and attach-to-active-session **Not implemented** unless separately demonstrated; opening an external terminal does not satisfy G3.
 
+## G2 reliability — large local inventory and safe resume
+
+The read-only discovery implementation now limits concurrent transcript metadata reads to **12**. Synthetic tests verify that its worker pool respects a concurrency ceiling and preserves result order; they do **not** prove acceptable Windows disk latency or handle usage.
+
+On a Windows host with a representative existing Claude Code/Codex history, measure the time to first inventory, a second refresh, UI responsiveness while refreshing, and whether the official clients remain usable. Record only elapsed time, session counts and coarse CPU/memory/handle observations—not transcript text, paths or account identifiers. Repeat with a large disposable fixture if feasible; do not manufacture or overwrite actual agent histories. Treat excessive latency, UI hangs, open-file errors or unexpected process launches as failures requiring remediation.
+
+The **Resume in Windows terminal** button is not safe attachment to an active process. The app cannot currently prove session ownership or activity status. Only test on a known inactive disposable session after confirming the project and reading the warning; never use an actively running session to validate resume. A CLI can potentially continue its own pending work even though the app sends no prompt.
+
 ## REL-001 / issue #3 — first-party interference control
 
 Run normal provider conversations in the official browser while the preview starts, switches providers, displays two panes, refreshes local metadata and quits. Check before/during/after behavior without spamming retries. If the failure reported on October 19 recurs, change **one** competing app/extension at a time, record which change first restores the browser, and avoid claiming a cause without isolation. Never export raw network headers or session data.
