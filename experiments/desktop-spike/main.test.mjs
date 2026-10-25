@@ -263,7 +263,7 @@ test("REL-013 CON-006: provider diagnostics identify blocked popups and load err
   const f = await shellFixture();
   const view = f.views[0].webContents;
   view.emit("did-start-loading");
-  assert.deepEqual(f.window.webContents.sent.at(-1), {
+  assert.deepEqual(JSON.parse(JSON.stringify(f.window.webContents.sent.at(-1))), {
     channel: "spike:provider-status",
     payload: {provider:"chatgpt", pane:"left", state:"loading", errorCode:null},
   });
@@ -271,7 +271,7 @@ test("REL-013 CON-006: provider diagnostics identify blocked popups and load err
   view.emit("did-fail-load", {}, -105, "ERR_NAME_NOT_RESOLVED",
     "https://accounts.example.test/callback?code=DO_NOT_EXPOSE", true);
   const failure = f.window.webContents.sent.at(-1);
-  assert.deepEqual(failure.payload, {
+  assert.deepEqual(JSON.parse(JSON.stringify(failure.payload)), {
     provider:"chatgpt", pane:"left", state:"load-failed", errorCode:-105,
   });
   assert.ok(!JSON.stringify(f.window.webContents.sent).includes("DO_NOT_EXPOSE"));
@@ -285,7 +285,7 @@ test("REL-013 CON-006: provider diagnostics identify blocked popups and load err
   assert.equal(f.window.webContents.sent.at(-1).payload.state, "page-loaded",
     "A normal redirect cancellation is not a provider failure.");
 
-  assert.deepEqual(view.popupHandler({url:"https://accounts.example.test/?token=DO_NOT_EXPOSE"}),
+  assert.deepEqual(JSON.parse(JSON.stringify(view.popupHandler({url:"https://accounts.example.test/?token=DO_NOT_EXPOSE"}))),
     {action:"deny"});
   assert.equal(f.window.webContents.sent.at(-1).payload.state, "popup-blocked");
   assert.ok(!JSON.stringify(f.window.webContents.sent).includes("DO_NOT_EXPOSE"));
