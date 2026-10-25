@@ -42,10 +42,12 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
   <select id="left" aria-label="Left provider">
     <option value="chatgpt">ChatGPT</option><option value="claude">Claude</option><option value="gemini">Gemini</option>
   </select>
+  <p id="leftStatus" class="hint" role="status">Provider page status not yet observed. Login not verified.</p>
   <h2>Right native website</h2>
   <select id="right" aria-label="Right provider">
     <option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option>
   </select>
+  <p id="rightStatus" class="hint" role="status">Right provider not loaded yet.</p>
   <p class="hint">Choose <b>Two chats</b> or <b>Stack chats</b> to display two genuine provider webpages simultaneously—even two different chats from the same provider. Choose <b>Chat + local agents</b> to display your local Claude Code/Codex session inventory beside a genuine provider webpage.</p>
   <h2>Open original browser</h2>
   <p class="hint">If a provider blocks embedded sign-in or a feature doesn't work, continue in your normal browser. We won't import browser cookies.</p>
@@ -68,6 +70,21 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
 "use strict";
 const $ = id => document.getElementById(id);
 let selectedAgent = null;
+// Diagnostic events contain only a pane, provider, coarse state and numeric
+// network error code. Never display or collect provider URLs or auth secrets.
+window.aiWorkspace.onProviderStatus(status => {
+  if (!status || !["left", "right"].includes(status.pane)) return;
+  if ($(status.pane).value !== status.provider) return;
+  const messages = {
+    "loading": "Loading provider webpage. Sign-in is not yet verified.",
+    "page-loaded": "Provider webpage rendered. Login and native controls remain unverified.",
+    "popup-blocked": "Provider requested a popup. Popups are blocked in this preview; use the browser fallback if sign-in fails.",
+    "load-failed": "Provider page load failed" +
+      (Number.isSafeInteger(status.errorCode) ? " (network code " + status.errorCode + ")" : "") +
+      ". Try Open in browser; no credentials were copied.",
+  };
+  $(status.pane + "Status").textContent = messages[status.state] || "Provider state unknown.";
+});
 function setMessage(message){ $("message").textContent = String(message || ""); }
 function printDetails(agent){
   selectedAgent = agent;
