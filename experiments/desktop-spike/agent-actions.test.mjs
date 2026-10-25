@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createRequire} from "node:module";
+import {EventEmitter} from "node:events";
 const require=createRequire(import.meta.url);
 const {prepareAgentResume,openAgentTerminal}=require("./agent-actions.cjs");
 
@@ -48,7 +49,10 @@ test("AGENT-002: external terminal launch happens only after an explicit main-pr
   const session={provider:"codex",sessionId:ID,cwd:ROOT};
   const response=await openAgentTerminal(session,{...MOCK,spawnFn:(exe,args,options)=>{
     events.push({exe,args,options});
-    return {unref(){events.push("unref")}};
+    const child = new EventEmitter();
+    child.unref = () => events.push("unref");
+    queueMicrotask(() => child.emit("spawn"));
+    return child;
   }});
   assert.equal(response.launched,true);
   assert.equal(response.mode,"external-terminal");
@@ -81,4 +85,38 @@ test("AGENT-003: local CLI safety check fails closed if project directory cannot
     {provider:"codex",sessionId:ID,cwd:ROOT},
     {...MOCK,readdirFn:async () => { throw Object.assign(new Error("denied"),{code:"EACCES"}); }}
   ), /denied/);
+});
+
+test("AGENT-002 REL-013: asynchronous spawn failure rejects instead of reporting a false launch", async () => {
+  let unrefCalled = false;
+  const child = new EventEmitter();
+  child.unref = () => { unrefCalled = true; };
+  const result = openAgentTerminal({provider:"codex",sessionId:ID,cwd:ROOT}, {
+    ...MOCK,
+    spawnFn: () => {
+      queueMicrotask(() => child.emit("error", Object.assign(new Error("Executable not found"), {code:"ENOENT"})));
+      return child;
+    },
+  });
+  await assert.rejects(result, /Executable not found/);
+  assert.equal(unrefCalled, false, "A failed child must not be detached or reported as launched.");
+});
+
+test("AGENT-002: missing spawn acknowledgement is a bounded failure", async () => {
+  const child = new EventEmitter();
+  child.unref = () => { throw Error("Must not detach"); };
+  await assert.rejects(openAgentTerminal({provider:"codex",sessionId:ID,cwd:ROOT}, {
+    ...MOCK, launchTimeoutMs: 10, spawnFn: () => child,
+  }), /not acknowledged in time/);
+});
+
+test("AGENT-002: premature terminal close before spawn is not success", async () => {
+  const child = new EventEmitter();
+  child.unref = () => { throw Error("Must not detach"); };
+  await assert.rejects(openAgentTerminal({provider:"claude-code",sessionId:ID,cwd:ROOT}, {
+    ...MOCK, spawnFn: () => {
+      queueMicrotask(() => child.emit("close", 1));
+      return child;
+    },
+  }), /exited before launch confirmation/);
 });
