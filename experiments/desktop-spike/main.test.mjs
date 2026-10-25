@@ -28,10 +28,12 @@ async function shellFixture() {
       super();
       this.id = FakeWebContents.nextId++;
       this.loaded = [];
+      this.sent = [];
       this.closed = false;
     }
     static nextId = 1;
     setWindowOpenHandler(handler) { this.popupHandler = handler; }
+    send(channel, payload) { this.sent.push({channel, payload}); }
     getURL() { return this.loaded.at(-1) || ""; }
     async loadURL(url) { this.loaded.push(url); }
     isDestroyed() { return this.closed; }
@@ -255,4 +257,45 @@ test("REL-013: app quits only when the window-all-closed event occurs; no backgr
   assert.equal(f.app.quitCalled, undefined);
   f.app.emit("window-all-closed");
   assert.equal(f.app.quitCalled, true);
+});
+
+test("REL-013 CON-006: provider diagnostics identify blocked popups and load errors without leaking auth URLs", async () => {
+  const f = await shellFixture();
+  const view = f.views[0].webContents;
+  view.emit("did-start-loading");
+  assert.deepEqual(f.window.webContents.sent.at(-1), {
+    channel: "spike:provider-status",
+    payload: {provider:"chatgpt", pane:"left", state:"loading", errorCode:null},
+  });
+
+  view.emit("did-fail-load", {}, -105, "ERR_NAME_NOT_RESOLVED",
+    "https://accounts.example.test/callback?code=DO_NOT_EXPOSE", true);
+  const failure = f.window.webContents.sent.at(-1);
+  assert.deepEqual(failure.payload, {
+    provider:"chatgpt", pane:"left", state:"load-failed", errorCode:-105,
+  });
+  assert.ok(!JSON.stringify(f.window.webContents.sent).includes("DO_NOT_EXPOSE"));
+  view.emit("did-finish-load");
+  assert.equal(f.window.webContents.sent.at(-1).payload.state, "load-failed",
+    "Do not overwrite a failed load with an inaccurate page-loaded status.");
+
+  view.emit("did-start-loading");
+  view.emit("did-fail-load", {}, -3, "ERR_ABORTED", "https://chatgpt.com/redirect", true);
+  view.emit("did-finish-load");
+  assert.equal(f.window.webContents.sent.at(-1).payload.state, "page-loaded",
+    "A normal redirect cancellation is not a provider failure.");
+
+  assert.deepEqual(view.popupHandler({url:"https://accounts.example.test/?token=DO_NOT_EXPOSE"}),
+    {action:"deny"});
+  assert.equal(f.window.webContents.sent.at(-1).payload.state, "popup-blocked");
+  assert.ok(!JSON.stringify(f.window.webContents.sent).includes("DO_NOT_EXPOSE"));
+});
+
+test("REL-013: provider diagnostics do not leak subframe URLs or error descriptions", async () => {
+  const f = await shellFixture();
+  const view = f.views[0].webContents;
+  const before = f.window.webContents.sent.length;
+  view.emit("did-fail-load", {}, -105, "PRIVATE ERROR",
+    "https://other.example.test/SECRET", false);
+  assert.equal(f.window.webContents.sent.length, before);
 });
