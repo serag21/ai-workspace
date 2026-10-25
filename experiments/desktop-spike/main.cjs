@@ -25,6 +25,16 @@ let layout = "agent";
 const selected = { left: "chatgpt", right: "claude" };
 const views = new Map();
 
+// G1 diagnostics are deliberately coarse: never transmit provider URLs,
+// authentication codes, cookies, titles or page content to the app shell.
+function reportProviderStatus(provider, pane, state, errorCode = null) {
+  if (!windowRef || windowRef.isDestroyed()) return;
+  windowRef.webContents.send("spike:provider-status", {
+    provider, pane, state,
+    errorCode: Number.isSafeInteger(errorCode) ? errorCode : null,
+  });
+}
+
 function createProviderView(provider, pane = "left") {
   const viewKey = pane + ":" + provider;
   const existing = views.get(viewKey);
@@ -46,7 +56,30 @@ function createProviderView(provider, pane = "left") {
       webviewTag: false,
     },
   });
-  view.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Popups remain denied until genuine Windows authentication compatibility
+  // is established. Show the limitation rather than silently failing login.
+  let failedLoad = false;
+  let popupBlocked = false;
+  view.webContents.setWindowOpenHandler(() => {
+    popupBlocked = true;
+    reportProviderStatus(provider, pane, "popup-blocked");
+    return { action: "deny" };
+  });
+  view.webContents.on("did-start-loading", () => {
+    failedLoad = false;
+    popupBlocked = false;
+    reportProviderStatus(provider, pane, "loading");
+  });
+  view.webContents.on("did-fail-load", (_event, errorCode, _description, _url, isMainFrame) => {
+    // ERR_ABORTED (-3) is a normal redirect/navigation cancellation, not
+    // evidence that provider login failed. Ignore subframe failures as well.
+    if (errorCode === -3 || isMainFrame === false) return;
+    failedLoad = true;
+    reportProviderStatus(provider, pane, "load-failed", errorCode);
+  });
+  view.webContents.on("did-finish-load", () => {
+    if (!failedLoad && !popupBlocked) reportProviderStatus(provider, pane, "page-loaded");
+  });
   view.webContents.on("will-navigate", (event, url) => {
     try { if (new URL(url).protocol !== "https:") event.preventDefault(); }
     catch { event.preventDefault(); }
@@ -57,7 +90,9 @@ function createProviderView(provider, pane = "left") {
   views.set(viewKey, view);
   void view.webContents.loadURL(URLS[provider]).catch((error) => {
     // Failure is surfaced in the main-process console for this prototype.
-    console.error("Provider page failed to load:", provider, error.message);
+    console.error("Provider page failed to load:", provider, error?.code || "unknown");
+    failedLoad = true;
+    reportProviderStatus(provider, pane, "load-failed");
   });
   return view;
 }
