@@ -17,7 +17,7 @@ One genuine desktop workspace with independent/native provider chat panes, local
 ## Current truthful implementation snapshot
 
 - Chrome extension exists on `main`. It discovers browser tabs and text snapshots but does not satisfy the desired native desktop experience; do not resume extension-first feature work.
-- Isolated Electron preview on `spike/local-agents-desktop`; one/two/stacked native provider WebContentsViews, independent same-provider panes, browser fallback, local Claude Code/Codex session inventory, explicit external-terminal CLI resume (not in-app live terminal).
+- Isolated Electron preview on `spike/local-agents-desktop`; one/two/stacked native provider WebContentsViews, independent same-provider panes, browser fallback, local Claude Code/Codex session inventory, and explicit external-terminal CLI resume (not in-app live terminal) that now fails closed when the official CLI is not resolvable on PATH (77dbe3b).
 - Windows CI produces a portable unsigned executable and runs an **offline** smoke test. Mocked Node/Electron tests run on CI. The newest known verified branch before this handoff: `42ef8ec` from 2026-10-25, green source and Windows builds; refresh actual HEAD/CI before acting.
 - Native provider sign-in, Google OAuth in Electron, real web chat control fidelity, image uploads, user-specific conversation identity and actual local CLI resume on Windows remain **unverified**. Do not call this commercially usable until validated.
 - Quality register: `docs/quality/reliability-regression-register.md`, 50 gates, including REL-001 critical first-party ChatGPT interference regression. User observed two PC-wide chat loading incidents while Echoes/ChatGPT apps were running, attribution unproven.
@@ -55,14 +55,21 @@ One genuine desktop workspace with independent/native provider chat panes, local
 - Added durable AGENTS.md and this board to the spike branch without modifying main.
 - Real Windows provider-authenticated compatibility and code-agent interactive session control remain unverified.
 
-### Last completed
+### 2026-10-26 — QW-001 completed; QW-003 increment (open local OpenCode + Ollama qwen)
 
-Local-first handoff directives prepared and committed to GitHub; awaiting first foreground OpenCode run on the owner's PC.
+- **QW-001 (done, real local host):** Isolated-branch clone verified: local clone checked out `spike/local-agents-desktop` tracking origin; local `main` (876cd11) is a strict ancestor of the branch — zero local-only commits; no modified tracked files; untracked local artifacts (`.vs/`, `package-lock.json`, `tsconfig.tsbuildinfo`) preserved, generated artifacts now ignored (9cc9ba6).
+- All existing non-provider tests run on the owner's Windows host: `node --test experiments/local-agent-probe/*.test.mjs` **11/11 pass**; `node --test experiments/desktop-spike/*.test.mjs` **45/45 pass** (synthetic; not provider E2E). 50-gate report: 20 gates synthetic-mapped unchanged; **16 P0 gates still require live-host verification**.
+- CI at branch head 0148b03: "Local agent spike tests" green (runs 40277062743, 40276958081); latest "Desktop Preview Windows" green 2026-10-25 (run 40209261068). Windows-host packaged-preview behavior: **not re-run locally this session** (requires `npm install` Electron + foreground launch; not needed for the code increment, to be validated at the human acceptance step).
+- **QW-003 (increment, synthetic tests only):** fail-closed CLI provenance before external terminal resume (77dbe3b): read-only PATH stat scan (never executes), resume refuses to open a terminal when the CLI is missing; 8 new deterministic tests; wired into both workflows and the coverage report. Post-change local run **64/64 pass**.
+- QW-002: **not attempted** — requires owner test accounts and interactive sign-in; no credential automation per charter. QW-003 real dry run: **blocked** on owner approval to open a terminal against a genuine local session.
+
+### Last completed
+QW-001 local repository audit and full local non-provider test run, plus a safe fail-closed CLI-provenance gate for agent resume (QW-003 increment) committed and pushed to `spike/local-agents-desktop` (77dbe3b, 9cc9ba6).
 
 ### Next
-
-QW-001 local repository audit and test execution. Then QW-002 real Windows compatibility evidence without credentials in logs, followed by QW-003.
+QW-002: owner-approved real Windows provider sign-in and interaction evidence (blocked on a human test with owner test accounts). Then QW-003 completion: owner-approved real local Claude/Codex resume dry run in a separate terminal, verifying project/ID/cwd and no duplicate prompts. If embedded-User-Agent login is blocked, proceed to QW-005 architecture comparison (no bypass).
 
 ### Blocked
-
-Cloud runner cannot access the owner's local OpenCode configuration, real Ollama GPU, signed-in native desktop apps, or private local Claude Code/Codex session files. Do not pretend to have tested them.
+- QW-002: real provider authentication needs the owner's accounts and an interactive sign-in; the smallest approval needed is one owner-run foreground launch of the packaged preview with explicit provider sign-in on owner test accounts.
+- QW-003 real dry run: needs owner consent to resume one verified-inactive genuine local session in a separate terminal; "active" state must never be inferred from file mtime.
+- Cloud runner limits persist: CI cannot see the owner's signed-in desktop apps, Ollama/GPU state, or private local session files.
