@@ -9,6 +9,7 @@
 const { spawn } = require("node:child_process");
 const { stat, realpath, readdir } = require("node:fs/promises");
 const path = require("node:path");
+const { resolveCliOnPath } = require("./cli-provenance.cjs");
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMANDS = Object.freeze({
@@ -16,7 +17,7 @@ const COMMANDS = Object.freeze({
   "codex": {program: "codex", args: id => ["resume", id]},
 });
 
-async function prepareAgentResume(session, {platform = process.platform, statFn = stat, realpathFn = realpath, readdirFn = readdir} = {}) {
+async function prepareAgentResume(session, {platform = process.platform, statFn = stat, realpathFn = realpath, readdirFn = readdir, probeFn = resolveCliOnPath, env = process.env} = {}) {
   if (platform !== "win32") throw new Error("External terminal resume is currently supported on Windows only.");
   if (!session || !Object.hasOwn(COMMANDS,session.provider) ||
       typeof session.sessionId !== "string" || !UUID.test(session.sessionId)) {
@@ -44,7 +45,15 @@ async function prepareAgentResume(session, {platform = process.platform, statFn 
   if (names.some(name => typeof name === "string" && shadowNames.has(name.toLowerCase()))) {
     throw new Error("Project folder contains a command that could shadow the installed CLI. Resume refused.");
   }
+  // Fail closed on provenance: the official CLI must exist on this machine's
+  // PATH before a terminal is opened. The probe is a filesystem stat scan only;
+  // it never executes the command or sends a prompt.
+  const cliPath = await probeFn(entry.program, { env, statFn });
+  if (!cliPath) {
+    throw new Error("The " + entry.program + " CLI was not found on this machine's PATH. Install the official CLI before resuming.");
+  }
   return {
+    cliPath,
     executable: process.env.ComSpec || "cmd.exe",
     args: ["/k", entry.program, ...entry.args(session.sessionId)],
     options: {cwd, windowsHide: false, detached: true, stdio: "ignore", shell: false},

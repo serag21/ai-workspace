@@ -15,6 +15,7 @@ const MOCK={
   },
   statFn:async () => ({isDirectory:()=>true}),
   readdirFn:async () => [],
+  probeFn:async program => "C:\\Program Files\\" + program + "\\" + program + ".exe",
 };
 test("AGENT-002: Claude Code resumes selected UUID without shell interpolation or auto-prompt",async()=>{
   const args=await prepareAgentResume({provider:"claude-code",sessionId:ID,cwd:ROOT},MOCK);
@@ -119,4 +120,27 @@ test("AGENT-002: premature terminal close before spawn is not success", async ()
       return child;
     },
   }), /exited before launch confirmation/);
+});
+
+test("AGENT-002: resume fails closed without opening a terminal when the CLI is not on PATH", async () => {
+  let spawned = false;
+  await assert.rejects(openAgentTerminal({provider:"claude-code",sessionId:ID,cwd:ROOT}, {
+    ...MOCK,
+    probeFn: async () => null,
+    spawnFn: () => { spawned = true; throw Error("must not spawn"); },
+  }), /not found on this machine's PATH/);
+  assert.equal(spawned, false, "A missing CLI must never produce a failing terminal window.");
+});
+
+test("AGENT-003: resume preparation reports the resolved CLI path without executing it", async () => {
+  const calls = [];
+  const prepared = await prepareAgentResume({provider:"codex",sessionId:ID,cwd:ROOT}, {
+    ...MOCK,
+    probeFn: async (program, opts) => { calls.push({program, stats: opts.statFn}); return "C:\\apps\\codex.cmd"; },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].program, "codex");
+  assert.equal(calls[0].stats, MOCK.statFn);
+  assert.equal(prepared.cliPath, "C:\\apps\\codex.cmd");
+  assert.deepEqual(prepared.args, ["/k","codex","resume",ID]);
 });

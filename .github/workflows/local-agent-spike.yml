@@ -20,6 +20,8 @@ jobs:
         run: node --test experiments/desktop-spike/sync-policy.test.mjs
       - name: Safe local agent resume commands (mocked; never launch a terminal)
         run: node --test experiments/desktop-spike/agent-actions.test.mjs
+      - name: Installed-CLI provenance scan (read-only stat; never executes a CLI)
+        run: node --test experiments/desktop-spike/cli-provenance.test.mjs
       - name: Desktop main-process behavior tests (fake Electron; no provider traffic)
         run: node --test experiments/desktop-spike/main.test.mjs
       - name: Native browser fallback route security (synthetic; no provider requests)

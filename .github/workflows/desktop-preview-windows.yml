@@ -34,7 +34,7 @@ jobs:
       - name: Inspect desktop sources
         run: npm run check
       - name: Verify desktop and local-agent regressions on Windows (synthetic, no login or CLI)
-        run: node --test provider-navigation.test.mjs main.test.mjs agent-actions.test.mjs ../local-agent-probe/discover.test.mjs
+        run: node --test provider-navigation.test.mjs main.test.mjs agent-actions.test.mjs cli-provenance.test.mjs ../local-agent-probe/discover.test.mjs
       - name: Stage agent modules and package native executable
         run: npm run package:windows
       - name: Verify executable and local session assets
