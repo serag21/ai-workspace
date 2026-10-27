@@ -6,3 +6,9 @@ dist/
 *.log
 .DS_Store
 .vscode/
+.vs/
+*.tsbuildinfo
+# Locally generated CI/report artifacts (published as GitHub Actions artifacts, never committed):
+experiments/desktop-spike/regression-status.md
+experiments/desktop-spike/agent-discovery/
+
