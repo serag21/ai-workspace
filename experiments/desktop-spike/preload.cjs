@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("aiWorkspace", Object.freeze({
   selectProvider: (provider, pane) => ipcRenderer.invoke("spike:select-provider", provider, pane),
   setLayout: (layout) => ipcRenderer.invoke("spike:set-layout", layout),
   listAgents: () => ipcRenderer.invoke("spike:list-agents"),
+  cliProvenance: () => ipcRenderer.invoke("spike:cli-provenance"),
   resumeAgent: (provider, sessionId) => ipcRenderer.invoke("spike:resume-agent", provider, sessionId),
   openNativeBrowser: (pane) => ipcRenderer.invoke("spike:open-native-browser", pane),
   onProviderStatus: (callback) => {

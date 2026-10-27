@@ -90,14 +90,23 @@ function printDetails(agent){
   selectedAgent = agent;
   $("agentDetail").hidden = false;
   $("resume").hidden = false;
-  $("resume").disabled = !agent.cwd || !["claude-code","codex"].includes(agent.provider);
-  $("resume").title = agent.cwd ? "Open a separate terminal with this saved session. Does not auto-send a prompt." : "Missing original working directory";
+  const supported = agent.provider === "claude-code" || agent.provider === "codex";
+  const probe = window.cliProbe;
+  const cliMissing = supported && probe !== null && probe[agent.provider] === null;
+  $("resume").disabled = !agent.cwd || !supported || cliMissing;
+  $("resume").title = !agent.cwd ? "Missing original working directory"
+    : cliMissing ? "Resume refused right now: the " + (agent.provider === "claude-code" ? "Claude Code" : "Codex") +
+      " CLI was not found on this machine's PATH. Install the official CLI first."
+    : "Open a separate terminal with this saved session. Does not auto-send a prompt.";
   $("agentDetail").textContent = [
     agent.provider + " | " + agent.sessionId,
     "Title: " + agent.title,
     "Project: " + (agent.cwd || "Not observed"),
     "Branch: " + (agent.branch || "Not observed"),
     "Last updated: " + new Date(agent.modifiedAt).toLocaleString(),
+    "Installed CLI: " + (probe === null ? "not checked" :
+      (probe[agent.provider] ? "found at " + probe[agent.provider] + " (read-only PATH scan)"
+        : "NOT found on this machine's PATH - resume will be refused")),
     "Active status: unknown (not tracked)",
     "Local transcript: " + agent.file,
     "",
@@ -113,6 +122,11 @@ async function refreshAgents(){
   $("agentDetail").hidden = true;
   const parent = $("agentList");
   parent.textContent = "Reading local metadata…";
+  // Read-only provenance check (stat on PATH, nothing executed): lets the UI
+  // say BEFORE a resume whether the official CLI is installed on this machine.
+  window.cliProbe = null;
+  try { window.cliProbe = await window.aiWorkspace.cliProvenance(); }
+  catch { window.cliProbe = null; }
   try {
     const agents = await window.aiWorkspace.listAgents();
     parent.replaceChildren();

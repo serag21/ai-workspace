@@ -9,6 +9,7 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, session, shell } = require("electron");
 const path = require("node:path");
 const { openAgentTerminal } = require("./agent-actions.cjs");
+const { resolveCliOnPath } = require("./cli-provenance.cjs");
 const { browserDestination } = require("./provider-navigation.cjs");
 
 const URLS = Object.freeze({
@@ -226,6 +227,17 @@ app.whenReady().then(async () => {
   ipcMain.handle("spike:list-agents", async (event) => {
     if (!ownsSender(event)) throw new Error("Unknown window.");
     return readLocalAgents();
+  });
+
+  // Read-only installed-CLI provenance for honest UI state before any resume.
+  // stat-on-PATH only: never executes a CLI, sends no prompt, no network.
+  ipcMain.handle("spike:cli-provenance", async (event) => {
+    if (!ownsSender(event)) throw new Error("Unknown window.");
+    const [claude, codex] = await Promise.all([
+      resolveCliOnPath("claude"),
+      resolveCliOnPath("codex"),
+    ]);
+    return { platform: process.platform, "claude-code": claude, codex };
   });
 
   ipcMain.handle("spike:resume-agent", async (event, provider, sessionId) => {

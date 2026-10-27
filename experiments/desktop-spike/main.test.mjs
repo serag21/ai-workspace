@@ -91,6 +91,7 @@ async function shellFixture() {
       if (id === "electron") return mockElectron;
       if (id === "node:path") return path;
       if (id === "./agent-actions.cjs") return { openAgentTerminal: async () => { throw Error("Fake must never start a real agent."); } };
+      if (id === "./cli-provenance.cjs") return { resolveCliOnPath: async (program) => program === "claude" ? "C:\\bin\\claude.cmd" : null };
       if (id === "./provider-navigation.cjs") return requireNavigation;
       throw Error("Unexpected native module: " + id);
     },
@@ -214,6 +215,16 @@ test("AGENT-003: external agent launch IPC cannot be called by a provider webpag
       "11111111-1111-4111-8111-111111111111"),
     /Unknown window/
   );
+});
+
+test("AGENT-002: CLI provenance IPC is owner-window-only and read-only", async () => {
+  const f = await shellFixture();
+  const result = await f.handlers.get("spike:cli-provenance")(f.sender);
+  assert.equal(result["claude-code"], "C:\\bin\\claude.cmd");
+  assert.equal(result["codex"], null);
+  assert.ok(!/sync|history|prompt/i.test("spike:cli-provenance"),
+    "A provenance channel must not imply background provider work.");
+  await assert.rejects(f.handlers.get("spike:cli-provenance")(f.otherSender), /Unknown window/);
 });
 
 test("REL-013: unrecognized sender, provider, pane, and layout denied before loading", async () => {
