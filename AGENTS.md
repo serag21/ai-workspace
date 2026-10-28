@@ -11,6 +11,7 @@ Core test: would a real user choose AI Workspace instead of Echoes + separate of
 ## Required context (read before any implementation)
 
 - `docs/local-first-development-charter.md` — owner-approved local-first operating model and current handoff.
+- `docs/shared-gpu-integration-readiness.md` — central GPU-controller ownership, this repo's current workloads, pause/resume limitations and future thin-adapter contract; no independent scheduler.
 - `docs/desktop-pivot-research-2026-10-19.md` — market alternatives and decision gates.
 - `docs/quality/reliability-regression-register.md` — all 50 mandatory quality gates; never silently remove one.
 - `docs/desktop-preview-user-guide.md` — precise desktop preview limitations.
