@@ -10,7 +10,12 @@ Core test: would a real user choose AI Workspace instead of Echoes + separate of
 
 ## Required context (read before any implementation)
 
-- `docs/local-first-development-charter.md` — owner-approved local-first operating model and current handoff.
+- `PROJECT_CHARTER.md` — permanent original product vision, scope, non-negotiables, release/business success criteria.
+- `BACKLOG.md` — prioritized, independently executable READY tasks, dependencies and acceptance evidence.
+- `DECISIONS.md` — owner-level decisions, rejected approaches, and why they were made.
+- `RUN_STATE.json` — machine-readable current task, last verified result, safe checkpoint and next action.
+- `.opencode/commands/advance.md` — native OpenCode `/advance` entrypoint. It is **invoked manually for now**; it is not a scheduler.
+- `docs/local-first-development-charter.md` — earlier milestones and the detailed local-first execution history.
 - `docs/shared-gpu-integration-readiness.md` — central GPU-controller ownership, this repo's current workloads, pause/resume limitations and future thin-adapter contract; no independent scheduler.
 - `docs/desktop-pivot-research-2026-10-19.md` — market alternatives and decision gates.
 - `docs/quality/reliability-regression-register.md` — all 50 mandatory quality gates; never silently remove one.
@@ -55,11 +60,20 @@ Core test: would a real user choose AI Workspace instead of Echoes + separate of
 
 ## Work cycle
 
-1. Inspect the branch, working tree, CI, project charter, quality gates and one meaningful user workflow.
+1. Read the four durable state files, inspect branch/working tree/CI, and reconcile any stale run state with actual Git/test evidence. Preserve original product scope.
 2. Choose a small, high-value, testable increment that does not require interfering with unrelated PC apps.
 3. Implement, run scoped tests, inspect failures, fix, document honest limitations, commit to the isolated branch.
 4. Update charter's **Last completed / Next / Blocked** notes and link commits/CI.
-5. Stop when blocked by missing real Windows sign-in/CLI verification; record exactly the smallest approval/test needed instead of pretending it was completed or introducing unsafe workarounds.
+5. When a task is blocked by real Windows sign-in, CLI verification or an unpublished GPU lease contract, record the blocker and select the next meaningful **READY CPU-only** task in BACKLOG.md. Stop only if no safe valuable work remains, the configured budget ends, or release/product gates are reached; never invent filler work.
 6. Do not keep scheduling or running silently when the user closes the terminal. Local inference stops with the local machine.
 
 Do not overwrite this file with `/init` or generate a generic competing set of project instructions.
+
+## Bounded autonomous continuation contract (added 2026-10-29)
+
+- The owner wants development to resume **without copying a new prompt after every milestone**, not indefinite GPU utilization. Use OpenCode's native command and noninteractive run/session-continuation features, not a second custom supervisor.
+- **No unattended local AI task is currently activated.** Future local scheduled execution is owned exclusively by the existing OpenMontage central worker after its real lease/queue contract and explicit owner approval, plus a quiet two-cycle recovery smoke. No invented endpoints, hidden PowerShell jobs or duplicate schedulers.
+- Each approved bounded cycle has finite duration/retry/compute budget described in RUN_STATE.json. Do not start a GPU inference cycle unless the existing shared controller has authorized it; Gaming Hold and emergency controls always win. Committed Git state is the checkpoint—not an assumption that an in-flight model response survives reboot.
+- Agent autonomy covers ordinary code/test/docs/branch commits; major architecture, security access, money, launch, pricing, publishing and product pivots stay with the owner. Avoid unbounded model benchmarks and speculative infrastructure.
+- On each cycle: choose the highest-value ready task, implement/test it, commit evidence, update BACKLOG.md / RUN_STATE.json and a material DECISIONS.md entry if needed; present a short outcomes-only summary. If the product is ready for user acceptance, ask for **one meaningful milestone test**, not routine micromanagement.
+- To check the contract offline before claiming progress: `node scripts/validate-autonomy-contract.mjs`. Tests: `node --test scripts/validate-autonomy-contract.test.mjs`.
