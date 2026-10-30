@@ -2,6 +2,19 @@
 
 **Owner decision: 2026-10-25.** Source of truth for the OpenCode/Ollama implementation phase. Update this document with dated evidence as work proceeds. Keep the previous research and 50-gate quality register intact.
 
+## Governance update — 2026-10-29
+
+This file preserves the **earlier development history and QW-001…QW-009 mapping**. To avoid repeated huge context dumps, the authoritative ongoing state is now split into:
+
+- `PROJECT_CHARTER.md` — permanent original product vision and explicit release/commercial success.
+- `BACKLOG.md` — prioritized READY/BLOCKED tasks, QW mapping and acceptance criteria.
+- `DECISIONS.md` — lasting strategic and operational rationale.
+- `RUN_STATE.json` — actual last-verified checkpoint, next task, finite compute budget, automation activation status.
+
+OpenCode's native `.opencode/commands/advance.md` is available as a **manual foreground command**. `node scripts/validate-autonomy-contract.mjs` checks the four-file contract offline and CI checks the same. GitHub issue [#5](https://github.com/serag21/ai-workspace/issues/5) tracks the still-unverified integration into the **existing central** OpenMontage worker.
+
+**No unattended local development job has been started or enabled by this repo.** The owner wants autonomous continuation, but the central GPU/worker's published lease/queue contract, quiet two-cycle execution test and activation approval are still required. Budgets in RUN_STATE are policy until a real coordinator enforces them. Local foreground OpenCode can continue implementing CPU-only READY tasks without waiting on G1 account tests; no invented filler work.
+
 ## Why the ownership changed
 
 The owner no longer wants ChatGPT Scheduled Tasks, Codex Cloud or Claude Code to be mandatory daily coding intermediaries. Local OpenCode + Ollama on the RTX 5090 will perform routine implementation, debugging, review and tests. Paid/frontier tools are optional escalations where measured improvement justifies them, never implicit dependencies.
