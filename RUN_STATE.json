@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "projectId": "ai-workspace",
+  "sourceBranch": "spike/local-agents-desktop",
+  "updatedOn": "2026-10-29",
+  "governance": {
+    "vision": "PROJECT_CHARTER.md",
+    "backlog": "BACKLOG.md",
+    "decisions": "DECISIONS.md",
+    "instructions": "AGENTS.md",
+    "qualityGates": "docs/quality/reliability-regression-register.md",
+    "acceptance": "docs/quality/windows-provider-acceptance.md",
+    "legacyExecutionLog": "docs/local-first-development-charter.md"
+  },
+  "automation": {
+    "mode": "foreground-manual",
+    "isActivated": false,
+    "ownerApprovalToActivate": false,
+    "localAgent": "OpenCode + existing Ollama",
+    "invocation": "native-opencode-run-when-called-by-verified-shared-worker",
+    "schedulerOwner": "OpenMontage Production central GPU controller",
+    "controllerContract": "not-published-or-not-verified",
+    "controllerIntegration": "not-implemented",
+    "recurringJobsCreatedByThisRepo": false,
+    "externalPaidCallsEnabled": false,
+    "note": "This file does not activate any job, daemon, timer, Windows task or GPU lease."
+  },
+  "resources": {
+    "maxUnattendedMinutesPerCycle": 60,
+    "checkpointIntervalMinutes": 30,
+    "maxDeterministicRetriesPerStep": 2,
+    "maxConcurrentLocalModels": 1,
+    "maxPaidProviderCalls": 0,
+    "allowDesktopControl": false,
+    "allowArbitraryExternalPublication": false,
+    "leaseRequiredForNewGpuWork": true,
+    "onControllerUnavailable": "no-gpu-inference; CPU-only work or persist queued state",
+    "gamingHold": "no new GPU work; finish at safe task checkpoint only if granted by central owner"
+  },
+  "run": {
+    "status": "idle",
+    "activeTaskId": null,
+    "runId": null,
+    "opencodeSessionId": null,
+    "startedAt": null,
+    "lastCheckpointAt": null,
+    "lastValidatedCommit": null,
+    "lastError": null,
+    "retriesUsed": 0,
+    "lastVerified": {
+      "sourceCommit": "597310900fd00169f6a7550aa96eb1da34f19edc",
+      "syntheticLocalTests": "89/89 reported by local agent 2026-10-29",
+      "sourceCi": "success at 5973109 (GitHub Actions run 41001927091)",
+      "windowsBuildCi": "success at e4c0e79 (GitHub Actions run 41001327640; offline startup only)",
+      "interactiveProviderAcceptance": "not-run",
+      "realLocalAgentAcceptance": "not-run",
+      "regressionCoverage": "28/50 synthetic-named; all 16 P0 still need live verification"
+    }
+  },
+  "next": {
+    "readyTaskId": "AW-006",
+    "otherReadyTaskIds": [
+      "AW-010",
+      "AW-004",
+      "AW-007",
+      "AW-005",
+      "AW-008"
+    ],
+    "ownerGatedTaskIds": [
+      "AW-002",
+      "AW-003"
+    ],
+    "activationGateTaskIds": [
+      "AW-011",
+      "AW-012"
+    ],
+    "checkpointOnNextRun": "Inspect git status and the current branch, validate four state files, verify latest CI and select the highest-value READY task that is safe under the controller state.",
+    "nextOwnerAction": "No immediate action required to keep CPU-only work planned. Real Windows provider login and an inactive agent resume are awaiting a meaningful preview test; unattended local GPU activation requires verified central contract and owner approval."
+  },
+  "completion": {
+    "releaseReady": false,
+    "commercialValidationPassed": false,
+    "reason": "Actual signed-in provider compatibility and local agent integration remain unverified. No production release or market-validation milestone completed."
+  }
+}
