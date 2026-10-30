@@ -7,7 +7,7 @@
   "scripts": {
     "prestart": "node build-assets.cjs",
     "start": "electron .",
-    "check": "node --check main.cjs && node --check preload.cjs && node --check build-assets.cjs && node --check package-win.cjs && node --check cli-provenance.cjs && node --check agent-actions.cjs && node --check agent-tail.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check build-assets.cjs && node --check package-win.cjs && node --check cli-provenance.cjs && node --check agent-actions.cjs && node --check agent-tail.cjs && node --check handoff-payload.cjs",
     "package:windows": "node build-assets.cjs && node package-win.cjs"
   },
   "devDependencies": {

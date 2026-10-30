@@ -81,6 +81,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     "experiments/desktop-spike/agent-actions.test.mjs",
     "experiments/desktop-spike/cli-provenance.test.mjs",
     "experiments/desktop-spike/agent-tail.test.mjs",
+    "experiments/desktop-spike/handoff-payload.test.mjs",
     "experiments/desktop-spike/sync-policy.test.mjs",
   ];
   const sources = await Promise.all(testPaths.map(p => readFile(path.join(root, p), "utf8")));
