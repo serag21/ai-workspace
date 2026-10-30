@@ -1,0 +1,51 @@
+# AI Workspace — Prioritized Development Backlog
+
+**Updated: 2026-10-29.** The immutable product aspiration lives in [PROJECT_CHARTER.md](PROJECT_CHARTER.md). This board changes frequently; each item has a verifiable completion outcome. Preserve original QW-001…QW-009 references from `docs/local-first-development-charter.md`; do not discard the 50 permanent quality gates. New work must justify how it advances a release, meaningful user workflow, reliability, or commercial validation.
+
+Status vocabulary: **DONE** (evidence linked), **READY** (independent bounded work possible), **BLOCKED** (specific dependency), **IN PROGRESS** (claimed by one run), **LATER** (not ready / avoid premature feature expansion), **CANCELLED** (with rationale in DECISIONS).
+
+| ID | QW / gate | Prio | Status | Deliverable and measurable acceptance | Dependency / evidence |
+| --- | --- | --- | --- | --- | --- |
+| AW-001 | QW-001 | P0 | **DONE** | Safely reconcile local branch, preserve untracked work, run existing tests and confirm CI; charter records 2026-10-26 evidence. | Local OpenCode report, commits `77dbe3b`, `41726de`, `6a9689e`. |
+| AW-002 | QW-002, G1, REL-001 | P0 | **BLOCKED** | One controlled foreground Windows preview test of actual ChatGPT/Claude/Gemini account login, existing threads, model/effort picker, draft/history, harmless attachments and browser coexistence; record pass/fail per provider with redacted reasons. | Requires owner's explicit interactive test account authorization; `docs/quality/windows-provider-acceptance.md`. No automation of personal accounts. |
+| AW-003 | QW-003, G2 | P0 | **BLOCKED** | On a **known inactive disposable** real Claude Code/Codex session, verify correct ID/repo/branch, bounded tail, external CLI resume and absence of automatically sent prompts. | Owner approval and host; do not infer active status from file mtime. |
+| AW-004 | QW-004, REL-001…015 | P0 | **READY** | Close independently reproducible CPU-only lifecycle and interference **simulation** defects, with tests for no implicit sync, bounded retries, no leftover subprocesses, crash recovery and truthful state. Never claim this clears live P0 gates. | Existing source tests + 50 gate register, finite tasks selected from real uncovered cases. |
+| AW-005 | QW-005, G1 | P0 | **READY** | Compare provider-compliant Windows authentication/browser-window alternatives based on official constraints; implement only a **bounded isolated CPU-only proof** if it does not control the user's desktop or personal browser. Recommend stop/pivot if unsupported. | No new auth bypasses. Engineering decision requires owner approval before major rewrite. |
+| AW-006 | QW-003/006, CON-004 | P1 | **READY** | Add a >2 MiB synthetic on-disk JSONL tail regression that exercises **real bounded file read** and accurate truncation/record/UTF-8 indicators without reading the entire file; run on Linux/Windows CI. | Existing `agent-tail.cjs` and tests, no live agent or GPU. |
+| AW-007 | QW-007, HAND-001…007 | P1 | **READY** | Independently test the versioned handoff payload builder on malformed/nested inputs, false-positive/failure cases, secret scanner and evidence labeling. Prepare a **local-only preview design** using fabricated data; do not wire a send path or expose real data until approved. | Existing `handoff-payload.cjs`. Owner decision required for actual UI/IPC exposure. |
+| AW-008 | QW-006 | P1 | **READY** | Research and implement a CPU-only contract mock for official Codex app-server / Claude Agent SDK **live** event handling, explicit approvals, cancelling, status unknown after disconnect, and read-only discovery. No active-session attach without proof. | Native SDK docs, no real process spawning without approval. |
+| AW-009 | QW-002/003 | P1 | **READY** | Package a single low-friction real Windows acceptance flow with exact build SHA, expected known behavior, safe diagnostics, restore/rollback steps and 30-second outcome summary; don't make the owner run 20 scattered commands. | Verified CI artifact; actual sign-in still owner-gated. |
+| AW-010 | AUTO-001 | P0 | **READY** | Verify the `PROJECT_CHARTER`/`BACKLOG`/`DECISIONS`/`RUN_STATE` state contract in CI, including stable IDs, a legitimate next task, finite budgets, no fake DONE, and no active autonomous worker without a verified controller contract. | GitHub-only CPU checks; no local inference or scheduling. |
+| AW-011 | AUTO-002 | P0 | **BLOCKED** | Demonstrate **two consecutive self-continuing local coding cycles** where the first checkpoint is persisted and the next selects new ready work without another user prompt. If PC off, queue and resume on safe next available slot. | Reuse existing *central* OpenMontage worker after its real versioned lease/queue contract is published, reviewed and explicitly authorized. Do not create a scheduler. |
+| AW-012 | GPU-001 | P0 | **BLOCKED** | Add a thin OpenCode/GPU lease client against the **actual published** shared controller contract; test Game Hold, ComfyUI hold, stop, emergency, controller outage, no lease/no launch and checkpoint/retry. | No contract available in AI Workspace as of 2026-10-29; no guessed endpoints. |
+| AW-013 | QW-008 | P1 | **LATER** | Project-aware visual library with correct activity time, fast search, filters, inbox/needs-me, saved layouts, list/cards and accessible split actions; test at 3k sessions. | Only after G1 authenticated native UI feasibility; no dashboard vanity work. |
+| AW-014 | QW-007 | P1 | **LATER** | Owner-approved end-to-end project handoff from consumer planning conversation to local coding agent and back, showing verified test/run state and explicit excluded artifacts. Test accuracy against copy/pasted summary baseline. | G1/G2 and approved UI boundary. |
+| AW-015 | QW-009, G5 | Product | **LATER** | Interviews/usage evidence from about 10–15 actual multi-provider + local-agent users; assess switching/willingness to pay and provider licensing; record supported ship/pivot/kill decision. | Working private beta; owner approves outside recruitment and business direction. |
+| AW-016 | Release | P0 | **LATER** | After G1/G2, resolve real-device P0 regressions, installer/signing, privacy, secure upgrades, restore/export, performance, error recovery and permissions. Deliver private Windows preview meeting acceptance matrix. | Human host tests, security review; do not silently publish. |
+
+## Next selectable work without owner involvement
+
+- **AW-006:** high-value, narrow synthetic large-transcript reliability test.
+- **AW-010:** deterministic project-state validator and CI check (only if not already tested).
+- **AW-004:** next specific regression gap from 50-gate register.
+- **AW-007:** local synthetic payload hardening (not exposing real handoffs).
+- **AW-005:** documented, time-boxed provider-login feasibility alternatives.
+- **AW-008:** mocked official SDK stream/approval contract.
+
+**Avoid changing this queue merely to keep a model busy.** Choose one highest-impact ready task per bounded cycle. If all meaningful tasks are blocked or release gates are reached, set RUN_STATE to `blocked` or `idle`; do not manufacture work. Limit consecutive speculative research-only cycles to one without a build/validation output.
+
+## Local-first autonomous worker entry contract (not an active scheduler)
+
+- OpenCode's supported `opencode run` and `--continue`/`--session` mechanisms are the preferred **agent invocation** layer. Do not build another job scheduler, shell supervisor, desktop controller, GPU governor or long-running daemon.
+- The **designated existing central** OpenMontage worker will eventually submit this repo and a known task/prompt to OpenCode only after a genuine lease/queue contract and separate activation approval. Desktop GUI and user browser must remain untouched. Running `opencode run` in an explicitly started foreground session is permitted; repeated unattended model invocation is **not active**.
+- Before each cycle, read these four files, `AGENTS.md`, real Git status, current CI and source tests; reconcile state against actual repo before assuming a previous run finished. Use Git status, commits, test output and proper service signals as evidence, not the model's claim alone.
+- Claim one task; checkpoint before expensive operations, and at least every 30 minutes if a longer run is explicitly authorized; update `RUN_STATE.json` at clean boundaries. Do not run concurrent agents in the same working tree. OpenCode session history is useful but **Git + four files are the durable source of truth**.
+- Default unattended work budget **when later activated**: 60 minutes per cycle, one local inference worker, at most two safe retries of a deterministic task step, 0 paid service calls, 0 new subscriptions, 0 external publications, 0 automatic desktop interactions. Observe external controller's **stricter** resource budgets and safe stop. No cap grants permission to start GPU use.
+- Finish a task only with test/evidence location; update BACKLOG and RUN_STATE; commit on `spike/local-agents-desktop`; wait for CI where possible and update evidence. No force push/main merge.
+- If interrupted mid-task, preserve last verified checkpoint. On next approved cycle, inspect git and logs before replaying *idempotent* steps. Never blindly retry a send, external API write, expensive generation or active session resume.
+- Agent may produce a 30-second update: `What works now / Evidence / Owner action (if any) / Next`. Do not force a daily activity report if no meaningful change occurred.
+- Background activation remains **disabled** until central controller's actual contract, consent and recovery smoke demonstrate a quiet two-cycle run.
+
+## Commercial stop conditions
+
+If Windows G1 provider compatibility fundamentally fails under compliant mechanisms, surface a bounded architecture decision rather than expanding the backlog. If core unified work is feasible but testers prefer Echoes + their current local tools, halt speculative polish and propose a narrower pivot. If private beta passes P0 real-host quality checks, seek owner release decision; don't prolong a launch with optional features.
