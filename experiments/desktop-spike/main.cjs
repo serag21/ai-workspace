@@ -10,6 +10,7 @@ const { app, BrowserWindow, WebContentsView, ipcMain, session, shell } = require
 const path = require("node:path");
 const { openAgentTerminal } = require("./agent-actions.cjs");
 const { resolveCliOnPath } = require("./cli-provenance.cjs");
+const { parseAgentTail, readTranscriptTail } = require("./agent-tail.cjs");
 const { browserDestination } = require("./provider-navigation.cjs");
 
 const URLS = Object.freeze({
@@ -238,6 +239,31 @@ app.whenReady().then(async () => {
       resolveCliOnPath("codex"),
     ]);
     return { platform: process.platform, "claude-code": claude, codex };
+  });
+
+  // Bounded read-only tail of a local agent transcript. The transcript PATH
+  // always comes from the main-side local inventory, never from the renderer,
+  // so a provider page cannot read arbitrary local files through this channel.
+  ipcMain.handle("spike:agent-tail", async (event, provider, sessionId) => {
+    if (!ownsSender(event)) throw new Error("Unknown window.");
+    if (typeof provider !== "string" || typeof sessionId !== "string")
+      throw new Error("Invalid session selection.");
+    const sessions = await readLocalAgents();
+    const chosen = sessions.find(item => item.provider === provider && item.sessionId === sessionId);
+    if (!chosen) throw new Error("Session not found in the local inventory.");
+    if (typeof chosen.file !== "string" || !/\.jsonl$/i.test(chosen.file))
+      throw new Error("No local transcript file recorded for this session.");
+    const tail = await readTranscriptTail(chosen.file);
+    const parsed = parseAgentTail(tail.text, chosen.provider);
+    return {
+      source: "local-transcript-tail",
+      provider: chosen.provider,
+      sessionId: chosen.sessionId,
+      transcriptFile: chosen.file,
+      transcriptBytes: tail.size,
+      windowLimited: tail.windowLimited,
+      ...parsed,
+    };
   });
 
   ipcMain.handle("spike:resume-agent", async (event, provider, sessionId) => {

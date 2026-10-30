@@ -65,6 +65,8 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
   <div id="agentList">Scanning local metadata…</div>
   <pre class="detail" id="agentDetail" hidden></pre>
   <button class="refresh" id="resume" hidden>Resume in Windows terminal</button>
+  <button class="refresh" id="agentTailButton" hidden>View last messages (read-only)</button>
+  <pre class="detail" id="agentTail" hidden></pre>
 </section>
 <script>
 "use strict";
@@ -98,6 +100,10 @@ function printDetails(agent){
     : cliMissing ? "Resume refused right now: the " + (agent.provider === "claude-code" ? "Claude Code" : "Codex") +
       " CLI was not found on this machine's PATH. Install the official CLI first."
     : "Open a separate terminal with this saved session. Does not auto-send a prompt.";
+  const tailSupported = supported && typeof agent.file === "string" && agent.file.endsWith(".jsonl");
+  $("agentTailButton").hidden = !tailSupported;
+  $("agentTailButton").textContent = "View last messages (read-only)";
+  $("agentTail").hidden = true;
   $("agentDetail").textContent = [
     agent.provider + " | " + agent.sessionId,
     "Title: " + agent.title,
@@ -119,7 +125,9 @@ function printDetails(agent){
 async function refreshAgents(){
   selectedAgent = null;
   $("resume").hidden = true;
+  $("agentTailButton").hidden = true;
   $("agentDetail").hidden = true;
+  $("agentTail").hidden = true;
   const parent = $("agentList");
   parent.textContent = "Reading local metadata…";
   // Read-only provenance check (stat on PATH, nothing executed): lets the UI
@@ -190,6 +198,40 @@ $("resume").addEventListener("click", async () => {
     setMessage("Opened an external Windows terminal for " + result.provider + ". CLI status has not been verified.");
   } catch (error) { setMessage(error.message || String(error)); }
   finally { $("resume").disabled = false; }
+});
+
+// Bounded read-only tail of the local transcript: latest turns with honest
+// truncation indicators (CON-004/CON-005). Never executes the agent, never
+// uploads the text; the file path is resolved by the main process.
+$("agentTailButton").addEventListener("click", async () => {
+  const agent = selectedAgent;
+  if (!agent) return;
+  $("agentTailButton").disabled = true;
+  try {
+    const tail = await window.aiWorkspace.agentTail(agent.provider, agent.sessionId);
+    const lines = [];
+    if (tail.unreadable) {
+      lines.push("This transcript could not be read as text (binary or unsupported format).", "");
+    } else {
+      if (tail.windowLimited) lines.push("(Only the last ~256 KiB window of a larger transcript was loaded.)");
+      if (tail.elidedEarlier) lines.push("(" + tail.elidedEarlier + " earlier message(s) not shown in this preview.)");
+      if (tail.droppedLines) lines.push("(" + tail.droppedLines + " partial/cut-off record(s) were skipped.)");
+      lines.push("");
+      if (!tail.messages.length) {
+        lines.push("No displayable user/assistant turns found in the latest window.");
+      }
+      for (const message of tail.messages) {
+        lines.push((message.role === "user" ? "you" : agent.provider === "codex" ? "codex" : "claude") + ": " +
+          message.text + (message.textTruncated ? " …[truncated in preview]" : ""));
+        lines.push("");
+      }
+    }
+    $("agentTail").textContent = lines.join("\n");
+    $("agentTail").hidden = false;
+    setMessage("Showing the latest local session turns (read-only preview).");
+  } catch (error) {
+    setMessage(error.message || String(error));
+  } finally { $("agentTailButton").disabled = false; }
 });
 void refreshAgents();
 </script>

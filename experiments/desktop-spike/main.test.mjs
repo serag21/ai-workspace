@@ -7,6 +7,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 const requireNavigation = createRequire(import.meta.url)("./provider-navigation.cjs");
+const requireTail = createRequire(import.meta.url)("./agent-tail.cjs");
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const script = await readFile(path.join(DIR, "main.cjs"), "utf8");
@@ -93,6 +94,7 @@ async function shellFixture() {
       if (id === "./agent-actions.cjs") return { openAgentTerminal: async () => { throw Error("Fake must never start a real agent."); } };
       if (id === "./cli-provenance.cjs") return { resolveCliOnPath: async (program) => program === "claude" ? "C:\\bin\\claude.cmd" : null };
       if (id === "./provider-navigation.cjs") return requireNavigation;
+      if (id === "./agent-tail.cjs") return requireTail;
       throw Error("Unexpected native module: " + id);
     },
     __dirname: DIR,
@@ -225,6 +227,23 @@ test("AGENT-002: CLI provenance IPC is owner-window-only and read-only", async (
   assert.ok(!/sync|history|prompt/i.test("spike:cli-provenance"),
     "A provenance channel must not imply background provider work.");
   await assert.rejects(f.handlers.get("spike:cli-provenance")(f.otherSender), /Unknown window/);
+});
+
+test("AGENT-004 CON-017: transcript tail IPC is owner-window-only and validates arguments", async () => {
+  const f = await shellFixture();
+  assert.ok(f.handlers.has("spike:agent-tail"), "the read-only tail channel must be installed");
+  await assert.rejects(
+    f.handlers.get("spike:agent-tail")(f.otherSender, "claude-code", "11111111-1111-4111-8111-111111111111"),
+    /Unknown window/,
+    "a provider webpage must not be able to read local session transcripts");
+  await assert.rejects(
+    f.handlers.get("spike:agent-tail")(f.sender, "claude-code"),
+    /Invalid session selection/);
+  await assert.rejects(
+    f.handlers.get("spike:agent-tail")(f.sender, "evil", {}),
+    /Invalid session selection/);
+  assert.ok(!/sync|history|prompt/i.test("spike:agent-tail"),
+    "the tail channel must not imply background provider work or prompt sending.");
 });
 
 test("REL-013: unrecognized sender, provider, pane, and layout denied before loading", async () => {
