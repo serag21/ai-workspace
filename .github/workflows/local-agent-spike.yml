@@ -12,6 +12,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Durable vision, backlog, run state and native OpenCode entrypoint (offline)
+        run: |
+          node --test scripts/validate-autonomy-contract.test.mjs
+          node scripts/validate-autonomy-contract.mjs
       - name: Read-only discovery tests
         run: node --test experiments/local-agent-probe/discover.test.mjs
       - name: Official Claude Agent SDK adapter tests (mocked; no API calls)
