@@ -38,9 +38,9 @@
     "gamingHold": "no new GPU work; finish at safe task checkpoint only if granted by central owner"
   },
   "run": {
-    "status": "idle",
-    "activeTaskId": null,
-    "runId": null,
+    "status": "in-progress",
+    "activeTaskId": "AW-007",
+    "runId": "aw007-2026-10-30-foreground-1",
     "opencodeSessionId": null,
     "startedAt": null,
     "lastCheckpointAt": null,
@@ -58,9 +58,8 @@
     }
   },
   "next": {
-    "readyTaskId": "AW-007",
+    "readyTaskId": "AW-005",
     "otherReadyTaskIds": [
-      "AW-005",
       "AW-008",
       "AW-009"
     ],

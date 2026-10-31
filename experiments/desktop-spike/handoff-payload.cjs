@@ -10,6 +10,9 @@
  * Evidence integrity (HAND-005): every factual claim carries an evidence
  * flag: "observed" (read from a local verifiable source), "inferred"
  * (derived, not directly verified) or "missing" (unknown, never guessed).
+ * A section that carries text can only claim observed|inferred; "missing"
+ * is expressed by naming the fact in the `missing` list, never by a text
+ * section (the same consistency rule the per-field flags enforce).
  *
  * Omissions are explicit (HAND-002): when a field is absent or a size cap
  * is reached, the payload names the omission instead of silently dropping
@@ -160,6 +163,10 @@ function buildHandoffPayload(input, limits = {}) {
     const evidence = section.evidence ?? "inferred";
     if (!EVIDENCE_FLAGS.has(evidence)) {
       throw new TypeError("sections[" + i + "].evidence must be observed|inferred|missing.");
+    }
+    if (evidence === "missing") {
+      throw new TypeError("sections[" + i + "].evidence is 'missing' but section text is present; " +
+        "content sections may only claim observed|inferred (unknowns belong in the missing list).");
     }
     return { kind, text, evidence };
   });
@@ -317,6 +324,10 @@ function validateHandoffPayload(payload) {
   else for (const section of p.sections) {
     if (!SECTION_KINDS.has(section.kind)) problems.push("unregistered section kind: " + section.kind);
     if (!EVIDENCE_FLAGS.has(section.evidence)) problems.push("section evidence flag invalid");
+    if (section.evidence === "missing" &&
+        typeof section.text === "string" && section.text.trim() !== "") {
+      problems.push("section claims 'missing' evidence while carrying text; this is inconsistent");
+    }
   }
   if (!Array.isArray(p.artifacts)) problems.push("artifacts must be an array.");
   if (p.destination === undefined || p.destination === null) problems.push("destination block is missing.");

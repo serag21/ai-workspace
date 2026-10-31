@@ -219,3 +219,89 @@ test("HAND-002: section kinds are registered and evidence on each section is val
   assert.deepEqual(payload.sections.map(s => s.kind), ["summary", "decisions", "testResults"]);
   assert.ok(payload.sections.every(s => ["observed", "inferred", "missing"].includes(s.evidence)));
 });
+
+test("HAND-006: artifact metadata is normalized honestly — non-boolean included is excluded, malformed sizes null", () => {
+  const payload = buildHandoffPayload(baseInput({
+    artifacts: [
+      { path: "a.md", included: "yes" },
+      { path: "b.md", included: 1 },
+      { path: "c.md", included: true, sizeBytes: -5 },
+      { path: "d.md", included: true, sizeBytes: 12.5 },
+    ],
+  }));
+  assert.deepEqual(payload.artifacts.map(a => a.included), [false, false, true, true],
+    "only an explicit true may include an artifact; truthy strings/numbers do not");
+  assert.deepEqual(payload.artifacts.map(a => a.sizeBytes), [null, null, null, null],
+    "negative or non-integer sizes are reported as unknown, never coerced");
+  assert.equal(payload.manifest.includedArtifactCount, 2);
+  assert.equal(validateHandoffPayload(payload).ok, true);
+});
+
+test("HAND-007: a token-shaped included artifact path is flagged, while excluded paths are never scanned", () => {
+  const included = "exports/ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345-notes.md";
+  const excluded = "exports/ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ098765-notes.md";
+  const payload = buildHandoffPayload(baseInput({
+    artifacts: [
+      { path: included, included: true },
+      { path: excluded, included: false },
+    ],
+  }));
+  assert.equal(payload.secretScan.flagged, true);
+  assert.equal(payload.secretScan.findings.length, 1,
+    "only the included path is part of the outgoing manifest; the excluded one is never scanned");
+  assert.equal(payload.secretScan.findings[0].id, "github-token");
+  assert.equal(payload.secretScan.findings[0].section, "artifact-path");
+  assert.ok(Object.keys(payload.secretScan.findings[0]).every(k => k === "id" || k === "index" || k === "section"),
+    "artifact-path findings leak no text either");
+});
+
+test("HAND-005: source evidence must declare a flag for every field — a partial evidence map is refused", () => {
+  assert.throws(() => buildHandoffPayload(baseInput({
+    source: {
+      provider: "chatgpt",
+      conversationId: "t-1",
+      title: "tt",
+      evidence: { provider: "observed" }, // conversationId/title undeclared
+    },
+  })), /source\.evidence\.conversationId/);
+});
+
+test("HAND-005: a text section can never claim 'missing' evidence, and validation detects a tampered one", () => {
+  assert.throws(() => buildHandoffPayload(baseInput({
+    sections: [{ kind: "summary", text: "I do not actually know this", evidence: "missing" }],
+  })), /missing' but section text is present/);
+
+  const tampered = buildHandoffPayload(baseInput());
+  tampered.sections[0] = { ...tampered.sections[0], evidence: "missing" };
+  const verdict = validateHandoffPayload(tampered);
+  assert.equal(verdict.ok, false, "carrying content behind a 'missing' flag is an integrity problem");
+  assert.match(verdict.problems.join(" "), /missing.*text|carrying text/);
+});
+
+test("HAND-005: blank section text is refused — a section is a claim, not an empty placeholder", () => {
+  assert.throws(() => buildHandoffPayload(baseInput({
+    sections: [{ kind: "summary", text: "   ", evidence: "observed" }],
+  })), /must not be blank/);
+});
+
+test("HAND-002 HAND-003: an oversized summary ships alone with an honest overflow flag and no phantom omission", () => {
+  const payload = buildHandoffPayload(baseInput({
+    sections: [{ kind: "summary", text: "z".repeat(500), evidence: "observed" }],
+  }), { maxTextBytes: 400 });
+  const kinds = payload.sections.map(s => s.kind);
+  assert.deepEqual(kinds, ["summary"], "the summary is the minimum contract and must survive");
+  assert.equal(payload.manifest.overflow, true, "exceeding the cap is flagged, not hidden");
+  assert.deepEqual(payload.omissions, [], "with only the summary present nothing was omitted, so none is named");
+  assert.equal(validateHandoffPayload(payload).ok, true);
+});
+
+test("HAND-007: multiple secret findings are sorted by position and findings carry no token text", () => {
+  const text = "token-a ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345 then xoxb--AbCd-Ef12-Hi34-Jk56-Lm78 here";
+  const findings = scanLikelySecrets(text);
+  assert.equal(findings.length, 2);
+  assert.deepEqual(findings.map(f => f.id), ["github-token", "slack-token"]);
+  assert.ok(findings[0].index < findings[1].index, "findings must be positioned in document order");
+  for (const f of findings) {
+    assert.deepEqual(Object.keys(f).sort(), ["id", "index"], "only id and index — never the matched text");
+  }
+});
