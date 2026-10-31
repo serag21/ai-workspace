@@ -1,8 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createRequire} from "node:module";
+import {mkdtemp, rm, writeFile} from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 const require=createRequire(import.meta.url);
-const {parseAgentTail, readTranscriptTail} = require("./agent-tail.cjs");
+const {parseAgentTail, readTranscriptTail, DEFAULT_MAX_BYTES} = require("./agent-tail.cjs");
+
+const TWO_MIB = 2 * 1024 * 1024;
+function assistantLine(content) {
+  return JSON.stringify({type:"assistant",message:{role:"assistant",content}});
+}
+function userLine(content) {
+  return JSON.stringify({type:"user",message:{role:"user",content}});
+}
 
 const CLAUDE_FIXTURE = [
   JSON.stringify({type:"user",message:{role:"user",content:"Fix the login bug"}}),
@@ -154,4 +165,88 @@ test("AGENT-004: malformed tail options are rejected before any filesystem use",
     statFn: async () => { throw Error("must not be consulted"); },
   }), /transcript file path/);
   assert.throws(() => parseAgentTail("{}", "claude-code", {maxMessages: 0}), /maxMessages/);
+});
+
+test("AGENT-004 CON-004: a real on-disk transcript over 2 MiB is read only from its end window", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "aiw-tail-large-"));
+  const file = path.join(dir, "session.jsonl");
+  try {
+    // ~2.25 MiB fixture: megabyte-scale earlier turns, then the recent end.
+    const body = [
+      assistantLine("MARKER-AWAY-1" + "x".repeat(1_300_000)),
+      assistantLine("x".repeat(850_000)),
+      assistantLine("recent context inside the window is fine"),
+      userLine("AW-006 real file final request"),
+      assistantLine("AW-006 real file final reply café ✓"),
+    ].join("\n") + "\n";
+    await writeFile(file, body, "utf8");
+
+    const tail = await readTranscriptTail(file); // real stat/open/read; no injection
+    assert.ok(tail.size > TWO_MIB, "fixture must be larger than 2 MiB");
+    assert.equal(tail.windowLimited, true, "a >2 MiB file must be reported as window-limited");
+    assert.equal(Buffer.byteLength(tail.text, "utf8"), DEFAULT_MAX_BYTES,
+      "only the bounded end window may be read from disk");
+
+    const result = parseAgentTail(tail.text, "claude-code");
+    assert.equal(result.unreadable, false);
+    assert.ok(result.droppedLines >= 1, "the line cut at the window edge must be dropped and reported");
+    assert.equal(result.messages.length, 3);
+    assert.deepEqual(result.messages.map(m => m.role), ["assistant","user","assistant"]);
+    assert.equal(result.messages.at(-1).text, "AW-006 real file final reply café ✓");
+    const surfaced = result.messages.map(m => m.text).join("\n");
+    assert.ok(!surfaced.includes("MARKER-AWAY"),
+      "megabyte-scale earlier content must not be read from disk");
+  } finally {
+    await rm(dir, {recursive: true, force: true});
+  }
+});
+
+test("AGENT-004 CON-004 CON-005: a >2 MiB real file with a mid-UTF-8 window cut keeps the true tail clean", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "aiw-tail-utf8-"));
+  const file = path.join(dir, "session.jsonl");
+  try {
+    // Deterministic layout: A (early marker), B (a long CJK run that the 256 KiB
+    // window cut is forced to land inside, mid-codepoint), C (the exact final
+    // turn that must survive the real read byte-intact).
+    const finalText = "AW-006 utf8 tail ✓ 日本語";
+    const a = assistantLine("MARKER-UTF8-AWAY" + "x".repeat(1_850_000));
+    const cjkCount = 102_400;
+    const b = assistantLine("P" + "日".repeat(cjkCount));
+    const c = userLine(finalText);
+    const byteLen = s => Buffer.byteLength(s, "utf8");
+    const lenA = byteLen(a);
+    const lenB = byteLen(b);
+    const lenC = byteLen(c);
+    const size = lenA + lenB + lenC + 3; // three newlines
+    const cut = size - DEFAULT_MAX_BYTES - (lenA + 1); // byte offset inside record B
+    // Derive the record framing from the builder itself (no hand-typed literal):
+    // with empty content, lenB'' = prefix + suffix, so the CJK run — placed after
+    // a single ASCII "P" — begins at (framing - 1) from the record start.
+    const framing = byteLen(assistantLine("")); // = prefix + suffix (empty content), here 64
+    const suffixLen = 3; // "}}"
+    const prefixLen = framing - suffixLen; // bytes up to the content opening quote, here 61
+    const cjkRunStart = prefixLen + 1; // after the leading "P": first 3-byte codepoint, here 62
+    assert.ok(size > TWO_MIB, "fixture must be larger than 2 MiB");
+    assert.ok(cut > cjkRunStart && cut < lenB - 3, "window cut must land inside record B's CJK run (test precondition)");
+    assert.notEqual((cut - cjkRunStart) % 3, 0, "window cut must land mid-codepoint to exercise UTF-8 decoding");
+
+    await writeFile(file, [a, b, c].join("\n") + "\n", "utf8");
+    const tail = await readTranscriptTail(file);
+    assert.equal(tail.windowLimited, true);
+    assert.ok(tail.text.includes("\uFFFD"),
+      "an incomplete codepoint at the cut must be honestly decoded, never silently spliced");
+
+    const result = parseAgentTail(tail.text, "claude-code");
+    assert.equal(result.unreadable, false);
+    assert.ok(result.droppedLines >= 1, "the cut record must be dropped, not half-parsed");
+    assert.equal(result.messages.length, 1);
+    assert.equal(result.messages[0].role, "user");
+    assert.equal(result.messages[0].text, finalText,
+      "the final turn must survive the real on-disk read byte-exact");
+    const surfaced = result.messages.map(m => m.text).join("|");
+    assert.ok(!surfaced.includes("\uFFFD"), "replacement characters must not leak into displayed turns");
+    assert.ok(!surfaced.includes("MARKER-UTF8-AWAY"), "content outside the end window must not be read");
+  } finally {
+    await rm(dir, {recursive: true, force: true});
+  }
 });
