@@ -28,6 +28,8 @@ jobs:
         run: node --test experiments/desktop-spike/cli-provenance.test.mjs
       - name: Bounded local transcript tail view (read-only; no agent execution)
         run: node --test experiments/desktop-spike/agent-tail.test.mjs
+      - name: Crash-safe workspace state recovery (synthetic; no provider traffic)
+        run: node --test experiments/desktop-spike/workspace-state.test.mjs
       - name: Provenance-aware handoff payload builder (local construction only; no send/upload)
         run: node --test experiments/desktop-spike/handoff-payload.test.mjs
       - name: Desktop main-process behavior tests (fake Electron; no provider traffic)
