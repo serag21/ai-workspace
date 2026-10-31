@@ -38,23 +38,23 @@
     "gamingHold": "no new GPU work; finish at safe task checkpoint only if granted by central owner"
   },
   "run": {
-    "status": "in-progress",
-    "activeTaskId": "AW-004",
-    "runId": "aw004-2026-10-30-foreground-1",
+    "status": "idle",
+    "activeTaskId": null,
+    "runId": null,
     "opencodeSessionId": null,
     "startedAt": null,
     "lastCheckpointAt": null,
-    "lastValidatedCommit": "e483806",
+    "lastValidatedCommit": "489dabdccf64de7ee8b33a216dc46241754f976c",
     "lastError": null,
     "retriesUsed": 0,
     "lastVerified": {
-      "sourceCommit": "e483806",
-      "syntheticLocalTests": "91/91 local 2026-10-30 (80 desktop-spike incl. 2 new real-disk tail tests + 11 probe)",
-      "sourceCi": "success at e483806 (GitHub Actions run 41170710785; includes new on-disk tests and state-contract validator)",
-      "windowsBuildCi": "success at e483806 (GitHub Actions run 41170710869; offline startup only)",
+      "sourceCommit": "489dabdccf64de7ee8b33a216dc46241754f976c",
+      "syntheticLocalTests": "101/101 local 2026-10-30 (90 desktop-spike incl. 10 new REL-010 workspace-state tests + 11 probe)",
+      "sourceCi": "success at 489dabd (GitHub Actions run 41172180995; includes workspace-state tests, state-contract validator and 31-gate regression report)",
+      "windowsBuildCi": "success at 489dabd (GitHub Actions run 41172181156; offline startup only)",
       "interactiveProviderAcceptance": "not-run",
       "realLocalAgentAcceptance": "not-run",
-      "regressionCoverage": "28/50 synthetic-named; all 16 P0 still need live verification"
+      "regressionCoverage": "31/50 synthetic-named (cycle added REL-010, CON-008, CON-013); all 16 P0 still need live verification"
     }
   },
   "next": {
@@ -72,7 +72,7 @@
       "AW-011",
       "AW-012"
     ],
-    "checkpointOnNextRun": "Cycle 2026-10-30: AW-006 DONE (e483806, both CIs green); AW-004 claimed — implement the REL-010 crash-safe workspace-state store (workspace-state.mjs + tests), wire workflow + regression-report testPaths, full suite green, then close AW-004 scope with honest evidence. Last green commit is the recovery checkpoint.",
+    "checkpointOnNextRun": "Cycle 2026-10-30 closed: AW-004 DONE (489dabd; REL-010 crash-safe workspace-state store + 10 recovery/eactly-once/cap/version tests; CIs 41172180995 and 41172181156 success; 101/101 local), AW-006 DONE (e483806), AW-010 DONE (reconciled). Next: pick AW-007 (handoff payload hardening) or another READY task from the board; last green commit 489dabd is the recovery checkpoint.",
     "nextOwnerAction": "No immediate action required to keep CPU-only work planned. Real Windows provider login and an inactive agent resume are awaiting a meaningful preview test; unattended local GPU activation requires verified central contract and owner approval."
   },
   "completion": {
