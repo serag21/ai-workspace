@@ -38,20 +38,20 @@
     "gamingHold": "no new GPU work; finish at safe task checkpoint only if granted by central owner"
   },
   "run": {
-    "status": "in-progress",
-    "activeTaskId": "AW-007",
-    "runId": "aw007-2026-10-30-foreground-1",
+    "status": "idle",
+    "activeTaskId": null,
+    "runId": null,
     "opencodeSessionId": null,
     "startedAt": null,
     "lastCheckpointAt": null,
-    "lastValidatedCommit": "489dabdccf64de7ee8b33a216dc46241754f976c",
+    "lastValidatedCommit": "7a3869122baa30f82ea361c4cbc9c591fac87285",
     "lastError": null,
     "retriesUsed": 0,
     "lastVerified": {
-      "sourceCommit": "489dabdccf64de7ee8b33a216dc46241754f976c",
-      "syntheticLocalTests": "101/101 local 2026-10-30 (90 desktop-spike incl. 10 new REL-010 workspace-state tests + 11 probe)",
-      "sourceCi": "success at 489dabd (GitHub Actions run 41172180995; includes workspace-state tests, state-contract validator and 31-gate regression report)",
-      "windowsBuildCi": "success at 489dabd (GitHub Actions run 41172181156; offline startup only)",
+      "sourceCommit": "7a3869122baa30f82ea361c4cbc9c591fac87285",
+      "syntheticLocalTests": "108/108 local 2026-10-30 (97 desktop-spike incl. 10 REL-010 + 7 handoff hardening tests + 11 probe)",
+      "sourceCi": "success at 7a38691 (GitHub Actions run 41172529013; includes handoff hardening, workspace-state, state-contract validator and 31-gate regression report)",
+      "windowsBuildCi": "success at 7a38691 (GitHub Actions run 41172528973; offline startup only)",
       "interactiveProviderAcceptance": "not-run",
       "realLocalAgentAcceptance": "not-run",
       "regressionCoverage": "31/50 synthetic-named (cycle added REL-010, CON-008, CON-013); all 16 P0 still need live verification"
@@ -71,7 +71,7 @@
       "AW-011",
       "AW-012"
     ],
-    "checkpointOnNextRun": "Cycle 2026-10-30 closed: AW-004 DONE (489dabd; REL-010 crash-safe workspace-state store + 10 recovery/eactly-once/cap/version tests; CIs 41172180995 and 41172181156 success; 101/101 local), AW-006 DONE (e483806), AW-010 DONE (reconciled). Next: pick AW-007 (handoff payload hardening) or another READY task from the board; last green commit 489dabd is the recovery checkpoint.",
+    "checkpointOnNextRun": "Cycle 2026-10-30 closed: AW-004 DONE (489dabd: REL-010 crash-safe workspace-state store + recovery/eactly-once/cap/version tests), AW-006 DONE (e483806), AW-010 DONE (reconciled), AW-007 DONE (7a38691: handoff hardening + local-only preview design). Latest CI: 41172529013 + 41172528973 success; 108/108 local. Next: AW-005 (provider-login feasibility alternatives, documented/time-boxed) per board order; last green commit 7a38691 is the recovery checkpoint.",
     "nextOwnerAction": "No immediate action required to keep CPU-only work planned. Real Windows provider login and an inactive agent resume are awaiting a meaningful preview test; unattended local GPU activation requires verified central contract and owner approval."
   },
   "completion": {
