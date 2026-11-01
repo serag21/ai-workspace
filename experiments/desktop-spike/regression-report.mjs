@@ -76,6 +76,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const testPaths = [
     "experiments/local-agent-probe/discover.test.mjs",
     "experiments/local-agent-probe/claude-sdk-adapter.test.mjs",
+    "experiments/local-agent-probe/sdk-live-adapter.test.mjs",
     "experiments/desktop-spike/main.test.mjs",
     "experiments/desktop-spike/provider-navigation.test.mjs",
     "experiments/desktop-spike/agent-actions.test.mjs",

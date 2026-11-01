@@ -20,6 +20,8 @@ jobs:
         run: node --test experiments/local-agent-probe/discover.test.mjs
       - name: Official Claude Agent SDK adapter tests (mocked; no API calls)
         run: node --test experiments/local-agent-probe/claude-sdk-adapter.test.mjs
+      - name: Live SDK event and explicit-approval contract (CPU-only injected streams; no process, no API calls)
+        run: node --test experiments/local-agent-probe/sdk-live-adapter.test.mjs
       - name: Reliability policy regression tests (synthetic; not provider E2E)
         run: node --test experiments/desktop-spike/sync-policy.test.mjs
       - name: Safe local agent resume commands (mocked; never launch a terminal)
