@@ -38,23 +38,23 @@
     "gamingHold": "no new GPU work; finish at safe task checkpoint only if granted by central owner"
   },
   "run": {
-    "status": "in-progress",
-    "activeTaskId": "AW-008",
-    "runId": "aw008-2026-11-01-foreground-1",
+    "status": "idle",
+    "activeTaskId": null,
+    "runId": null,
     "opencodeSessionId": null,
     "startedAt": null,
     "lastCheckpointAt": null,
-    "lastValidatedCommit": "9b812c212f127430ca513492d74a89ea0695f675",
+    "lastValidatedCommit": "ae3ccdc29e8163303053a05b0bdb021cef4dd36f",
     "lastError": null,
     "retriesUsed": 0,
     "lastVerified": {
-      "sourceCommit": "9b812c212f127430ca513492d74a89ea0695f675",
-      "syntheticLocalTests": "111/111 local 2026-11-01 (100 desktop-spike incl. 3 CON-016/REL-008/REL-013 isolation tests + 11 probe)",
-      "sourceCi": "success at 9b812c2 (GitHub Actions run 41346964000; includes provider-compliance alternatives, isolation contract proof, state-contract validator and 32-gate regression report)",
-      "windowsBuildCi": "success at 9b812c2 (GitHub Actions run 41346964088; offline startup only)",
+      "sourceCommit": "ae3ccdc29e8163303053a05b0bdb021cef4dd36f",
+      "syntheticLocalTests": "126/126 local 2026-11-01 (100 desktop-spike + 26 probe incl. 15 new official-SDK live event/approval contract tests)",
+      "sourceCi": "success at ae3ccdc (GitHub Actions run 41353146142; includes sdk-live-adapter contract tests, state-contract validator and 33-gate regression report)",
+      "windowsBuildCi": "success at ae3ccdc (GitHub Actions run 41353146128; offline startup only)",
       "interactiveProviderAcceptance": "not-run",
       "realLocalAgentAcceptance": "not-run",
-      "regressionCoverage": "32/50 synthetic-named (cycle added CON-016); all 16 P0 still need live verification"
+      "regressionCoverage": "33/50 synthetic-named (cycle added AGENT-005); all 16 P0 still need live verification"
     }
   },
   "next": {
@@ -68,8 +68,8 @@
       "AW-011",
       "AW-012"
     ],
-    "checkpointOnNextRun": "Cycle 2026-10-30..2026-11-01 closed: AW-004 DONE (489dabd), AW-006 DONE (e483806), AW-010 DONE (reconciled), AW-007 DONE (7a38691: handoff hardening + local-only preview design), AW-005 DONE (9b812c2: provider-compliance alternatives comparison + isolation/non-control contract proof; D-012 records the evidence-conditional pivot trigger). Latest CI: 41346964000 (Linux) + 41346964088 (Windows) success at 9b812c2; 111/111 local. Next: AW-008 (official SDK live event / explicit-approval contract mock, CPU-only; Codex App Server protocol per https://learn.chatgpt.com/docs/app-server) per board order; last green commit 9b812c2 is the recovery checkpoint.",
-    "nextOwnerAction": "No immediate action required to keep CPU-only work planned. The owner's G1 step 2 run is now the pivot discriminator (D-012: ≥2 target providers Blocked on embedded sign-in with no usable inline form triggers the pivot to B). An inactive agent resume (G2) also awaits a meaningful preview test; unattended local GPU activation requires verified central contract and owner approval."
+    "checkpointOnNextRun": "Cycle 2026-10-30..2026-11-01 complete (bounded cycle per owner instruction; stopped at clean checkpoint): AW-004 DONE (489dabd), AW-006 DONE (e483806), AW-010 DONE (reconciled), AW-007 DONE (7a38691), AW-005 DONE (9b812c2: D-012 pivot trigger), AW-008 DONE (ae3ccdc: official-SDK live event + explicit-approval contract mock; D-013 records deferred unverified shapes). Latest CI: 41353146142 (Linux) + 41353146128 (Windows) success at ae3ccdc; 126/126 local. Only AW-009 remains READY; no further work started (owner-gaming window respected). Last green commit ae3ccdc is the recovery checkpoint.",
+    "nextOwnerAction": "Bounded cycle complete — no autonomous work pending. Highest-value owner action: run G1 step 2 (embedded provider sign-in test, disposable account) — it is the D-012 pivot discriminator (≥2 target providers Blocked on embedded sign-in with no usable inline form triggers pivot B to the local-agent workbench). G2 (inactive agent resume) also awaits a meaningful preview test. AW-009 (CPU-only, READY) can be approved for a next cycle if the owner wants more bounded work first."
   },
   "completion": {
     "releaseReady": false,
