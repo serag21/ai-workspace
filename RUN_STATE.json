@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "projectId": "ai-workspace",
   "sourceBranch": "spike/local-agents-desktop",
-  "updatedOn": "2026-11-02",
+  "updatedOn": "2026-11-03",
   "governance": {
     "vision": "PROJECT_CHARTER.md",
     "backlog": "BACKLOG.md",
@@ -45,21 +45,21 @@
     "opencodeSessionId": null,
     "startedAt": null,
     "lastCheckpointAt": null,
-    "lastValidatedCommit": "ae3ccdc29e8163303053a05b0bdb021cef4dd36f",
+    "lastValidatedCommit": "d3ab0c30b1233cead152ed2329e5a7e7b8a86a99",
     "lastError": null,
     "retriesUsed": 0,
     "lastVerified": {
-      "sourceCommit": "ae3ccdc29e8163303053a05b0bdb021cef4dd36f",
-      "syntheticLocalTests": "126/126 local 2026-11-01 (100 desktop-spike + 26 probe incl. 15 new official-SDK live event/approval contract tests)",
-      "sourceCi": "success at ae3ccdc (GitHub Actions run 41353146142; includes sdk-live-adapter contract tests, state-contract validator and 33-gate regression report)",
-      "windowsBuildCi": "success at ae3ccdc (GitHub Actions run 41353146128; offline startup only)",
-      "interactiveProviderAcceptance": "not-run",
+      "sourceCommit": "d3ab0c30b1233cead152ed2329e5a7e7b8a86a99",
+      "syntheticLocalTests": "149/149 local 2026-11-03 (123 desktop-spike + 26 probe; includes AW-009 acceptance bridge/report/redaction tests and the new probe-window owner-window guard test)",
+      "sourceCi": "success at d3ab0c3 (GitHub Actions run 41702904567; includes acceptance-report tests, state-contract validator and 35-gate regression report)",
+      "windowsBuildCi": "success at d3ab0c3 (GitHub Actions run 41702904396; offline startup + packaged --smoke-verify proving bridge round trip, canary redaction, and AI_WORKSPACE_SMOKE_VERIFY_OK buildCommit=d3ab0c30…a86a99 == $GITHUB_SHA; artifact AI-Workspace-Preview-Windows-x64)",
+      "interactiveProviderAcceptance": "not-run (AW-009 acceptance package is READY for the owner's one-sitting run; G1 step-2 outcome is the D-012 discriminator)",
       "realLocalAgentAcceptance": "not-run",
-      "regressionCoverage": "33/50 synthetic-named (cycle added AGENT-005); all 16 P0 still need live verification"
+      "regressionCoverage": "35/50 synthetic-named (this cycle added acceptance-report tests); all 16 P0 still need live verification"
     }
   },
   "next": {
-    "readyTaskId": "AW-009",
+    "readyTaskId": "AW-017",
     "otherReadyTaskIds": [],
     "ownerGatedTaskIds": [
       "AW-002",
@@ -69,8 +69,8 @@
       "AW-011",
       "AW-012"
     ],
-    "checkpointOnNextRun": "Cycle 2026-10-30..2026-11-01 complete (bounded cycle per owner instruction; stopped at clean checkpoint): AW-004 DONE (489dabd), AW-006 DONE (e483806), AW-010 DONE (reconciled), AW-007 DONE (7a38691), AW-005 DONE (9b812c2: D-012 pivot trigger), AW-008 DONE (ae3ccdc: official-SDK live event + explicit-approval contract mock; D-013 records deferred unverified shapes). Latest CI: 41353146142 (Linux) + 41353146128 (Windows) success at ae3ccdc; 126/126 local. Only AW-009 remains READY; no further work started (owner-gaming window respected). Last green commit ae3ccdc is the recovery checkpoint. As of 2026-11-02 the central GPU contract 1.0 is published and reviewed; AI Workspace is still an optional uncommissioned client, and this does not change AW-009 readiness, the owner G1/G2 gates, or any prior validated code/test commit.",
-    "nextOwnerAction": "Bounded cycle complete — no autonomous work pending. Highest-value owner action: run G1 step 2 (embedded provider sign-in test, disposable account) — it is the D-012 pivot discriminator (≥2 target providers Blocked on embedded sign-in with no usable inline form triggers pivot B to the local-agent workbench). G2 (inactive agent resume) also awaits a meaningful preview test. AW-009 (CPU-only, READY) can be approved for a next cycle if the owner wants more bounded work first."
+    "checkpointOnNextRun": "2026-11-03 cycle complete (bounded foreground cycle; stopped at clean checkpoint): AW-009 DONE — one-sitting owner acceptance experience (in-app checklist single source of truth, local-only redacted one-click report, honest build identity chip, offline packaged --smoke-verify CI gate with exact $GITHUB_SHA match, honest startup-failure reporting; D-014 records design + rejected alternatives). Commits b533414 (feature) + d3ab0c3 (Windows CI fix: flush marker before app.exit + probe window owner-window; removes on-load 'Unknown window' rejections). Latest CI: 41702904567 (Linux) + 41702904396 (Windows) success at d3ab0c3; 149/149 local; regression report 35/50 synthetic gates (16 P0 live gates unchanged, owner-gated). Next-cycle named task: AW-017 (acceptance-report intake; CPU-only, locally testable). d3ab0c3 is the recovery checkpoint. Central GPU contract 1.0 remains published/reviewed; AI Workspace remains an optional uncommissioned client (AW-011/AW-012 BLOCKED).",
+    "nextOwnerAction": "AW-009 is DONE and both CI runs are green — the single meaningful owner action is the one-sitting acceptance run: download the AI-Workspace-Preview-Windows-x64 artifact of Windows run 41702904396, follow docs/quality/windows-acceptance-guide.md (launch, run the in-app Owner acceptance checklist, save the redacted .md/.json report pair from Downloads, send both files back). The G1 step-2 provider sign-in outcome inside that run is the D-012 discriminator (≥2 target providers Blocked → pivot B). Next-cycle task if invoked before the acceptance run: AW-017 (CPU-only, named, no activation required). AW-002/AW-003/AW-011/AW-012 remain owner-gated."
   },
   "completion": {
     "releaseReady": false,
