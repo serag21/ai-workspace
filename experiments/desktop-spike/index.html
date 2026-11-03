@@ -26,6 +26,20 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
 .detail{margin:18px 0 0;padding:12px;border:1px solid #354257;background:#151d2b;border-radius:10px;word-break:break-word;font-size:11px;white-space:pre-wrap;color:#c0cada}
 #message{font-size:11px;color:#f7c282;min-height:20px}
 .pill{font-size:10px;letter-spacing:.04em;color:#95c2ef}
+.build-chip{font:10px/1.4 ui-monospace,Consolas,monospace;color:#8fd0a5;background:#15271d;border:1px solid #2c5239;border-radius:10px;padding:3px 9px;white-space:nowrap}
+.acc-open{background:#274068;border-color:#5d82c4}
+.acc-overlay{position:fixed;inset:0;background:rgba(8,11,18,.68);z-index:30;display:flex;align-items:center;justify-content:center}
+.acc-inner{width:min(780px,94vw);max-height:88vh;overflow:auto;background:#121827;border:1px solid #344153;border-radius:14px;padding:20px 22px}
+.acc-inner h2{margin:0 0 6px;font-size:16px}
+.acc-inner .acc-sub{color:#96a4bb;font-size:11px;margin:0 0 12px;line-height:1.6}
+.acc-row{padding:9px 0;border-bottom:1px solid #223049;min-width:0}
+.acc-row .acc-label{font-size:12px;cursor:pointer}
+.acc-row .acc-check{display:block;color:#8b9cbd;font-size:11px;margin:3px 0 7px;line-height:1.55}
+.acc-row-controls{display:flex;gap:8px}
+.acc-row select{width:118px;border:1px solid #344153;border-radius:8px;background:#1b2534;padding:6px}
+.acc-row input[type="text"]{flex:1;min-width:0;border:1px solid #344153;border-radius:8px;background:#0f1520;padding:6px 9px;color:#dbe3f0;font-size:11px}
+.acc-actions{display:flex;gap:10px;margin-top:14px;align-items:center}
+.acc-saved{margin:12px 0 0;padding:12px;border:1px solid #2c5239;background:#12271c;border-radius:10px;white-space:pre-wrap;font-size:11px;color:#c0e2c8;user-select:text}
 </style></head>
 <body>
 <header>
@@ -35,6 +49,8 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
     <button data-layout="split" aria-pressed="false">Two chats</button>
     <button data-layout="stack" aria-pressed="false">Stack chats</button>
     <button data-layout="agent" aria-pressed="true">Chat + local agents</button>
+    <span id="buildChip" class="build-chip" title="This exact build's commit. Compare it with the Actions run you downloaded.">build …</span>
+    <button id="accOpen" class="acc-open">Owner acceptance test</button>
   </div>
 </header>
 <aside class="sidebar">
@@ -67,6 +83,26 @@ button[aria-pressed="true"]{background:#30497b;border-color:#7096e5}
   <button class="refresh" id="resume" hidden>Resume in Windows terminal</button>
   <button class="refresh" id="agentTailButton" hidden>View last messages (read-only)</button>
   <pre class="detail" id="agentTail" hidden></pre>
+</section>
+<section id="accOverlay" class="acc-overlay" hidden aria-label="Owner acceptance test">
+  <div class="acc-inner">
+    <h2>Owner acceptance test</h2>
+    <p class="acc-sub">
+      Work top to bottom. Record exactly what you see: <b>Pass</b>, <b>Fail</b>,
+      <b>Blocked</b> (the provider or platform prevented the step — recording that
+      IS the test) or leave it <b>Not tested</b>. Use only disposable accounts;
+      for the attachment check use SAFE-TEST-ATTACHMENT.txt from this folder —
+      never a private file. Notes are automatically scrubbed (links, addresses
+      and long tokens are removed) before anything is saved.
+    </p>
+    <div id="accList" aria-live="polite">Loading the checklist…</div>
+    <p id="accMessage" role="status"></p>
+    <pre id="accSaved" class="acc-saved" hidden></pre>
+    <div class="acc-actions">
+      <button id="accSave">Save local report…</button>
+      <button id="accClose">Close</button>
+    </div>
+  </div>
 </section>
 <script>
 "use strict";
@@ -233,6 +269,89 @@ $("agentTailButton").addEventListener("click", async () => {
     setMessage(error.message || String(error));
   } finally { $("agentTailButton").disabled = false; }
 });
+
+// ---------------------------------------------------------------------------
+// AW-009: low-friction owner acceptance experience
+// ---------------------------------------------------------------------------
+function setAccMessage(msg){ $("accMessage").textContent = String(msg || ""); }
+
+// Build chip: the exact commit of this package (embedded at build time), or
+// honestly "dev build" when running from a source tree without one.
+window.aiWorkspace.buildInfo().then(info => {
+  const chip = $("buildChip");
+  const commit = (info && info.buildCommit) ? info.buildCommit.slice(0, 10) : "dev build";
+  const version = (info && info.appVersion) ? "v" + info.appVersion : "v?";
+  chip.textContent = "build " + commit + " · " + version;
+  chip.title = "This exact build's commit. Compare it with the Actions run you downloaded.";
+}).catch(() => { $("buildChip").textContent = "build unknown"; });
+
+let accResults = null;
+async function openAcc(){
+  $("accOverlay").hidden = false;
+  $("accSaved").hidden = true;
+  setAccMessage("");
+  if (accResults) return;
+  const list = $("accList");
+  let items;
+  try { items = await window.aiWorkspace.acceptanceItems(); }
+  catch(e){ list.textContent = "Could not load the checklist: " + (e.message || e); return; }
+  accResults = [];
+  list.replaceChildren();
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "acc-row";
+    const label = document.createElement("label");
+    label.className = "acc-label";
+    label.textContent = item.label;
+    const check = document.createElement("span");
+    check.className = "acc-check";
+    check.textContent = item.check;
+    const controls = document.createElement("div");
+    controls.className = "acc-row-controls";
+    const select = document.createElement("select");
+    for (const [value, text] of [["not-tested", "Not tested"], ["pass", "Pass"], ["fail", "Fail"], ["blocked", "Blocked"]]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      if (value === "not-tested") option.selected = true;
+      select.appendChild(option);
+    }
+    const note = document.createElement("input");
+    note.type = "text";
+    note.maxLength = 400;
+    note.placeholder = "Only what you actually saw (optional); links, addresses and tokens are removed automatically";
+    accResults.push({ id: item.id, select, note });
+    controls.append(select, note);
+    label.append(check);
+    row.append(label, controls);
+    list.appendChild(row);
+  }
+}
+$("accOpen").addEventListener("click", openAcc);
+$("accClose").addEventListener("click", () => { $("accOverlay").hidden = true; });
+$("accSave").addEventListener("click", async () => {
+  if (!accResults) { setAccMessage("The checklist is not loaded yet."); return; }
+  $("accSave").disabled = true;
+  const payload = accResults.map(entry => {
+    const record = { id: entry.id, result: entry.select.value };
+    if (entry.note.value.trim()) record.note = entry.note.value.trim();
+    return record;
+  });
+  try {
+    const saved = await window.aiWorkspace.saveAcceptanceReport(payload);
+    const shown = $("accSaved");
+    shown.textContent =
+      "Saved (safe to send back as-is):\n" +
+      saved.markdownPath + "\n" +
+      saved.jsonPath + "\n\n" +
+      "30-second summary to paste anywhere:\n" + saved.summary;
+    shown.hidden = false;
+    setAccMessage("Report saved to your Downloads folder. Attach both files, or paste the summary back.");
+  } catch (error) {
+    setAccMessage("Save failed: " + (error.message || error));
+  } finally { $("accSave").disabled = false; }
+});
+
 void refreshAgents();
 </script>
 </body></html>

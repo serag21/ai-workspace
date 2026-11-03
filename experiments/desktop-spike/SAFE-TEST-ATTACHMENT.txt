@@ -1,0 +1,7 @@
+AI Workspace — safe test attachment
+
+This plain-text file exists so the owner acceptance test can exercise the
+attachment flow without risking any private file. It contains no credentials,
+cookies, tokens, account identifiers, conversation content, local paths or
+personal data of any kind. It is safe to attach to any provider conversation
+and safe to delete afterwards.

@@ -8,17 +8,62 @@ import vm from "node:vm";
 import { createRequire } from "node:module";
 const requireNavigation = createRequire(import.meta.url)("./provider-navigation.cjs");
 const requireTail = createRequire(import.meta.url)("./agent-tail.cjs");
+const requireAcceptance = createRequire(import.meta.url)("./acceptance-report.cjs");
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const script = await readFile(path.join(DIR, "main.cjs"), "utf8");
 
 /** Main-process unit test with a fake Electron implementation.
  * Never launches an actual provider or makes HTTP requests. */
-async function shellFixture() {
+async function shellFixture(options = {}) {
+  const argv = options.argv || ["electron", "main.cjs"];
   const views = [];
   const partitions = [];
   const windows = [];
   const handlers = new Map();
+  const dialog = {
+    calls: [],
+    showErrorBox(title, message) { dialog.calls.push(String(title) + "\n" + String(message)); },
+  };
+  // Memory-backed file fakes: the report writer and the startup-failure log
+  // are tested without touching the owner's real filesystem.
+  const memory = { files: new Map(), logLines: [] };
+  const osFake = {
+    tmpdir: () => "C:\\fake-tmp",
+    release: () => "10.0.fake-release",
+    homedir: () => "C:\\fake-home",
+  };
+  const fsFake = {
+    readFileSync(file) {
+      if (path.basename(file).toLowerCase() === "build-info.json") {
+        if (!options.buildInfo) {
+          const error = new Error("ENOENT (fake) build-info.json");
+          error.code = "ENOENT";
+          throw error;
+        }
+        return JSON.stringify(options.buildInfo);
+      }
+      const error = new Error("ENOENT (fake) " + path.basename(file));
+      error.code = "ENOENT";
+      throw error;
+    },
+    appendFileSync(file, text) { memory.logLines.push({ file: String(file), text: String(text) }); },
+    mkdirSync() { /* fake */ },
+  };
+  const fspFake = {
+    async mkdir() { /* fake */ },
+    async writeFile(file, data) { memory.files.set(String(file), String(data)); },
+    async readFile(file) {
+      const hit = memory.files.get(String(file));
+      if (hit === undefined) {
+        const error = new Error("ENOENT (fake) " + path.basename(String(file)));
+        error.code = "ENOENT";
+        throw error;
+      }
+      return hit;
+    },
+    async rm(file) { memory.files.delete(String(file)); },
+  };
   const ipcMain = { handle(name, handler) {
     assert.equal(handlers.has(name), false, "IPC registered twice: " + name);
     handlers.set(name, handler);
@@ -39,6 +84,15 @@ async function shellFixture() {
     async loadURL(url) { this.loaded.push(url); }
     isDestroyed() { return this.closed; }
     close() { this.closed = true; }
+    executeJavaScript(expression, _gesture) {
+      // The smoke verify checks only that the acceptance bridge functions
+      // exist; the fake asserts the probe was aimed at that contract.
+      if (typeof expression === "string" &&
+          expression.includes("saveAcceptanceReport") &&
+          expression.includes("acceptanceItems") &&
+          expression.includes("buildInfo")) return Promise.resolve(true);
+      return Promise.resolve(false);
+    }
   }
 
   class FakeView {
@@ -52,27 +106,31 @@ async function shellFixture() {
   }
 
   class FakeWindow extends EventEmitter {
-    constructor(options) {
+    constructor(windowOptions = {}) {
       super();
-      this.options = options;
+      if (options.failWindow) throw new Error("Simulated window failure (fake)");
+      this.options = windowOptions;
       this.webContents = new FakeWebContents();
       this.contentView = { addChildView: view => {
         assert.ok(views.includes(view));
         this.children.push(view);
       } };
       this.children = [];
-      this.width = options.width;
-      this.height = options.height;
+      this.width = windowOptions.width;
+      this.height = windowOptions.height;
       windows.push(this);
     }
     getContentSize() { return [this.width, this.height]; }
-    isDestroyed() { return false; }
+    isDestroyed() { return this.closed; }
     async loadFile(file) { this.file = file; }
+    close() { this.closed = true; }
   }
 
   const app = new EventEmitter();
   app.whenReady = async () => {};
   app.quit = () => { app.quitCalled = true; };
+  app.exit = (code) => { app.lastExit = code; };
+  app.getPath = (name) => path.join("C:\\fake-home", "AppData", "Local", String(name));
   const session = {
     fromPartition(partition) {
       assert.ok(partition.startsWith("persist:ai-workspace-spike-"));
@@ -86,11 +144,16 @@ async function shellFixture() {
   };
   const openedExternal=[];
   const shell={async openExternal(url){openedExternal.push(url);}};
-  const mockElectron = { app, BrowserWindow: FakeWindow, WebContentsView: FakeView, ipcMain, session, shell };
+  const mockElectron = { app, BrowserWindow: FakeWindow, WebContentsView: FakeView, ipcMain, session, shell, dialog };
+  const stdout = [];
   const sandbox = {
     require(id) {
       if (id === "electron") return mockElectron;
       if (id === "node:path") return path;
+      if (id === "node:os") return osFake;
+      if (id === "node:fs") return fsFake;
+      if (id === "node:fs/promises") return fspFake;
+      if (id === "./acceptance-report.cjs") return requireAcceptance;
       if (id === "./agent-actions.cjs") return { openAgentTerminal: async () => { throw Error("Fake must never start a real agent."); } };
       if (id === "./cli-provenance.cjs") return { resolveCliOnPath: async (program) => program === "claude" ? "C:\\bin\\claude.cmd" : null };
       if (id === "./provider-navigation.cjs") return requireNavigation;
@@ -100,18 +163,31 @@ async function shellFixture() {
     __dirname: DIR,
     URL,
     console,
-    process: { argv: ["electron", "main.cjs"], stdout: { write() {} } },
+    process: {
+      argv,
+      stdout: { write(text) { stdout.push(String(text)); } },
+      versions: { electron: "44.9.3" },
+      platform: "win32",
+    },
   };
   vm.runInNewContext(script, sandbox, { filename: "main.cjs" });
-  for (let i = 0; i < 10 && windows.length === 0; i++)
+  for (let i = 0; i < 30; i++) {
+    const settled = options.failWindow
+      ? app.lastExit !== undefined
+      : windows.length > 0;
+    if (settled) break;
     await new Promise(resolve => setImmediate(resolve));
-  assert.equal(windows.length, 1, "desktop shell bootstrapped one window");
+  }
+  if (!options.failWindow) {
+    assert.equal(windows.length, 1, "desktop shell bootstrapped one window");
+  }
   const window = windows[0];
   return {
     views, partitions, windows, handlers, window,
-    sender: { sender: { id: window.webContents.id } },
+    sender: { sender: { id: window ? window.webContents.id : -1 } },
     otherSender: { sender: { id: -99 } },
-    app, openedExternal,
+    app, openedExternal, dialog, memory, argv,
+    stdoutText: () => stdout.join(""),
   };
 }
 
@@ -328,4 +404,95 @@ test("REL-013: provider diagnostics do not leak subframe URLs or error descripti
   view.emit("did-fail-load", {}, -105, "PRIVATE ERROR",
     "https://other.example.test/SECRET", false);
   assert.equal(f.window.webContents.sent.length, before);
+});
+
+test("CON-017 TRUST-005: owner-only acceptance report save is validated, redacted and local only", async () => {
+  const f = await shellFixture();
+  const save = f.handlers.get("spike:save-acceptance-report");
+  assert.ok(save, "the local report save channel must be installed");
+  await assert.rejects(
+    save(f.otherSender, [{ id: "app-launches", result: "pass" }]),
+    /Unknown window/,
+    "a provider webpage must not be able to write acceptance reports");
+  await assert.rejects(save(f.sender, "pass"), /check result/);
+  await assert.rejects(
+    save(f.sender, [{ id: "root-canary", result: "pass" }]),
+    /Unknown acceptance check id/);
+  const note = "popup denied; see https://accounts.example.test/oauth2/callback?code=LEAKCANARY&state=abc" +
+    " ask owner@example.test token AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-GGGG-HHHH";
+  const saved = await save(f.sender, [
+    { id: "app-launches", result: "pass" },
+    { id: "chatgpt-signin", result: "blocked", note },
+  ]);
+  assert.ok(saved.markdownPath.endsWith(".md"));
+  assert.ok(saved.jsonPath.endsWith(".json"));
+  assert.ok(saved.summary.startsWith("AI Workspace acceptance"),
+    "the returned summary must be copy-pasteable");
+  const markdown = f.memory.files.get(saved.markdownPath);
+  const json = f.memory.files.get(saved.jsonPath);
+  assert.ok(markdown.includes("AI Workspace — owner acceptance report"));
+  assert.ok(!markdown.includes("LEAKCANARY"), "OAuth callback values must not reach the saved report");
+  assert.ok(!markdown.includes("owner@example.test"), "e-mail addresses must not reach the saved report");
+  assert.match(markdown, /\[link removed\]/);
+  assert.match(markdown, /\[address removed\]/);
+  assert.match(markdown, /\[opaque value removed\]/);
+  assert.match(markdown, /1 pass · 0 fail · 1 blocked · 17 not tested/);
+  const parsed = JSON.parse(json);
+  assert.equal(parsed.schema, "ai-workspace.acceptance/1");
+  assert.equal(parsed.environment.commit, null,
+    "a source-tree build must report no commit, not a fake one");
+});
+
+test("TRUST-006 CON-017: in-app checklist and build identity are served owner-window-only", async () => {
+  const f = await shellFixture();
+  const items = await f.handlers.get("spike:acceptance-items")(f.sender);
+  assert.ok(items.length >= 15, "the owner checklist must stay substantial");
+  assert.equal(items[0].id, "app-launches");
+  for (const item of items) {
+    assert.match(item.id, /^[a-z0-9-]+$/);
+    assert.ok(item.label.length >= 4 && item.check.length >= 20,
+      "each item needs a label and a plain-language step: " + item.id);
+  }
+  await assert.rejects(f.handlers.get("spike:acceptance-items")(f.otherSender), /Unknown window/);
+  const info = await f.handlers.get("spike:build-info")(f.sender);
+  assert.equal(info.buildCommit, null, "missing build-info must fall back honestly");
+  assert.equal(info.channel, "unverified-preview");
+  await assert.rejects(f.handlers.get("spike:build-info")(f.otherSender), /Unknown window/);
+});
+
+test("REL-013 CON-017: startup failure is reported honestly, logged privately and exits non-zero", async () => {
+  const f = await shellFixture({ failWindow: true });
+  assert.equal(f.windows.length, 0, "no window may be reported on failure");
+  assert.equal(f.app.lastExit, 1, "the app must exit with a failure code");
+  assert.equal(f.dialog.calls.length, 1, "an honest native dialog must be shown");
+  assert.match(f.dialog.calls[0], /could not start/i);
+  const logLine = f.memory.logLines[0];
+  assert.ok(logLine, "a private startup-failure log must be recorded");
+  assert.match(logLine.file, /startup-failure\.log$/);
+  assert.match(logLine.text, /Simulated window failure \(fake\)/);
+  assert.equal(f.memory.files.size, 0, "no report files may appear before a valid save");
+});
+
+test("CON-017 TRUST-005: smoke verify passes offline with embedded build identity and leaves no report behind", async () => {
+  const buildCommit = "11111112222233333333444444444455555566aa";
+  const f = await shellFixture({
+    argv: ["electron", "main.cjs", "--smoke-verify"],
+    buildInfo: { version: "0.1.0", buildCommit, builtAt: "2026-11-03T00:00:00.000Z", channel: "unverified-preview" },
+  });
+  assert.equal(f.app.lastExit, 0, "smoke verify must exit successfully");
+  assert.ok(f.stdoutText().includes(
+    "AI_WORKSPACE_SMOKE_VERIFY_OK buildCommit=" + buildCommit),
+    "the running build must report its exact embedded commit");
+  assert.equal(f.windows.length, 1, "only the local UI probe window may open");
+  assert.equal(f.views.length, 0, "smoke verify must not load provider pages");
+  assert.equal(f.openedExternal.length, 0, "smoke verify must not open external browser");
+  assert.equal(f.memory.files.size, 0, "smoke verify must clean up its temporary reports");
+});
+
+test("CON-017: smoke verify without embedded identity still passes and claims no commit", async () => {
+  const f = await shellFixture({ argv: ["electron", "main.cjs", "--smoke-verify"] });
+  assert.equal(f.app.lastExit, 0);
+  assert.match(f.stdoutText(), /AI_WORKSPACE_SMOKE_VERIFY_OK/);
+  assert.ok(!f.stdoutText().includes("buildCommit="),
+    "no commit must be claimed when none was embedded");
 });

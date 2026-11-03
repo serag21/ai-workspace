@@ -27,6 +27,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 const requireNavigation = createRequire(import.meta.url)("./provider-navigation.cjs");
+const requireAcceptance = createRequire(import.meta.url)("./acceptance-report.cjs");
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const script = await readFile(path.join(DIR, "main.cjs"), "utf8");
@@ -82,6 +83,8 @@ async function shellFixture() {
   const app = new EventEmitter();
   app.whenReady = async () => {};
   app.quit = () => {};
+  app.exit = (code) => { app.lastExit = code; };
+  app.getPath = (name) => path.join("C:\\fake-home", "AppData", "Local", String(name));
   const session = {
     fromPartition(partition) {
       assert.ok(partition.startsWith("persist:ai-workspace-spike-"),
@@ -93,11 +96,28 @@ async function shellFixture() {
   };
   const openedExternal = [];
   const shell = { async openExternal(url) { openedExternal.push(url); } };
-  const mockElectron = { app, BrowserWindow: FakeWindow, WebContentsView: FakeView, ipcMain, session, shell };
+  const dialog = {
+    calls: [],
+    showErrorBox(title, message) { dialog.calls.push(String(title) + "\n" + String(message)); },
+  };
+  const mockElectron = { app, BrowserWindow: FakeWindow, WebContentsView: FakeView, ipcMain, session, shell, dialog };
   const sandbox = {
     require(id) {
       if (id === "electron") return mockElectron;
       if (id === "node:path") return path;
+      if (id === "node:os") return { homedir: () => "C:\\fake-home", release: () => "10.0.fake-release" };
+      if (id === "node:fs") return {
+        readFileSync() { const error = new Error("ENOENT (fake) build-info.json"); error.code = "ENOENT"; throw error; },
+        appendFileSync() { /* failure path only; never assert side effects here */ },
+        mkdirSync() { /* failure path only */ },
+      };
+      if (id === "node:fs/promises") return {
+        async mkdir() { /* fake */ },
+        async writeFile() { throw new Error("saveAcceptanceReport must never run in this fixture"); },
+        async readFile(file) { const error = new Error("ENOENT (fake) " + path.basename(String(file))); error.code = "ENOENT"; throw error; },
+        async rm() { throw new Error("smoke verify must never run in this fixture"); },
+      };
+      if (id === "./acceptance-report.cjs") return requireAcceptance;
       if (id === "./agent-actions.cjs") return { openAgentTerminal: async () => { throw Error("Fake must never start a real agent."); } };
       if (id === "./cli-provenance.cjs") return { resolveCliOnPath: async () => null };
       if (id === "./provider-navigation.cjs") return requireNavigation;

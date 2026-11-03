@@ -36,6 +36,8 @@ jobs:
         run: node --test experiments/desktop-spike/handoff-payload.test.mjs
       - name: Desktop main-process behavior tests (fake Electron; no provider traffic)
         run: node --test experiments/desktop-spike/main.test.mjs
+      - name: Owner acceptance report contract (pure module; validated, redacted, local-only)
+        run: node --test experiments/desktop-spike/acceptance-report.test.mjs
       - name: Native browser fallback route security (synthetic; no provider requests)
         run: node --test experiments/desktop-spike/provider-navigation.test.mjs
       - name: Provider isolation and non-control contract (fake Electron; no provider traffic)
@@ -45,6 +47,7 @@ jobs:
           node --check experiments/desktop-spike/main.cjs
           node --check experiments/desktop-spike/preload.cjs
           node --check experiments/desktop-spike/provider-navigation.cjs
+          node --check experiments/desktop-spike/acceptance-report.cjs
       - name: Desktop UI script syntax
         run: |
           node --input-type=module -e "import fs from 'node:fs'; const html=fs.readFileSync('experiments/desktop-spike/index.html','utf8'); const script=html.match(/<script>([\s\S]*?)<\/script>/); if (!script) throw Error('Missing desktop UI script'); new Function(script[1]);"

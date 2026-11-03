@@ -34,7 +34,7 @@ jobs:
       - name: Inspect desktop sources
         run: npm run check
       - name: Verify desktop and local-agent regressions on Windows (synthetic, no login or CLI)
-        run: node --test provider-navigation.test.mjs main.test.mjs agent-actions.test.mjs cli-provenance.test.mjs agent-tail.test.mjs handoff-payload.test.mjs ../local-agent-probe/discover.test.mjs ../local-agent-probe/sdk-live-adapter.test.mjs
+        run: node --test provider-navigation.test.mjs main.test.mjs agent-actions.test.mjs cli-provenance.test.mjs agent-tail.test.mjs handoff-payload.test.mjs provider-isolation.test.mjs workspace-state.test.mjs sync-policy.test.mjs acceptance-report.test.mjs ../local-agent-probe/discover.test.mjs ../local-agent-probe/sdk-live-adapter.test.mjs
       - name: Stage agent modules and package native executable
         run: npm run package:windows
       - name: Verify executable and local session assets
@@ -53,20 +53,39 @@ jobs:
           if ($flatEntries -notmatch 'agent-discovery/discover\.mjs') { throw "Local Claude/Codex inventory module missing from ASAR" }
           if ($flatEntries -notmatch 'agent-discovery/claude-sdk-adapter\.mjs') { throw "Claude SDK adapter missing from ASAR" }
           if ($flatEntries -notmatch 'provider-navigation\.cjs') { throw "Native browser fallback validator missing from ASAR" }
+          if ($flatEntries -notmatch 'acceptance-report\.cjs') { throw "Owner acceptance report module missing from ASAR" }
+          if ($flatEntries -notmatch 'build-info\.json') { throw "Build identity metadata missing from ASAR" }
           "EXECUTABLE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Start packaged application offline (no provider traffic)
         timeout-minutes: 2
         run: |
           $proc = Start-Process -FilePath $env:EXECUTABLE -ArgumentList '--offline-smoke' -PassThru -Wait
           if ($proc.ExitCode -ne 0) { throw "Desktop offline startup failed with exit code $($proc.ExitCode)" }
-      - name: Zip portable preview
+      - name: Verify acceptance bridge and embedded build identity (offline --smoke-verify; no provider traffic)
+        timeout-minutes: 2
+        run: |
+          $output = & $env:EXECUTABLE --smoke-verify 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host "*** smoke-verify output ***"
+          Write-Host $output
+          if ($code -ne 0) { throw "Smoke verify failed with exit code $code" }
+          if ($output -notmatch 'AI_WORKSPACE_SMOKE_VERIFY_OK') { throw "Missing smoke verify OK marker" }
+          if ($output -notmatch ('AI_WORKSPACE_SMOKE_VERIFY_OK buildCommit=' + $env:GITHUB_SHA)) { throw 'Packaged build does not embed the exact Actions run commit' }
+      - name: Zip portable preview with owner guide, safe attachment and checksum
         run: |
           $build = Get-ChildItem -Path dist -Directory | Select-Object -First 1
           New-Item -ItemType Directory -Force -Path artifact | Out-Null
           Compress-Archive -Path (Join-Path $build.FullName "*") -DestinationPath "artifact\AI-Workspace-Preview-Windows-x64.zip" -CompressionLevel Optimal
           if (-not (Test-Path "artifact\AI-Workspace-Preview-Windows-x64.zip")) { throw "Missing distribution zip" }
+          if (-not (Test-Path "..\..\docs\quality\windows-acceptance-guide.md")) { throw "Missing owner acceptance guide" }
+          if (-not (Test-Path "SAFE-TEST-ATTACHMENT.txt")) { throw "Missing safe test attachment" }
+          Copy-Item "..\..\docs\quality\windows-acceptance-guide.md" "artifact\Owner-Acceptance-Guide.md"
+          Copy-Item "SAFE-TEST-ATTACHMENT.txt" "artifact\SAFE-TEST-ATTACHMENT.txt"
+          $hash = (Get-FileHash -Algorithm SHA256 "artifact\AI-Workspace-Preview-Windows-x64.zip").Hash.ToLower()
+          $hash | Out-File -FilePath "artifact\AI-Workspace-Preview-Windows-x64.zip.sha256" -Encoding ascii
+          Write-Host "SHA-256: $hash"
       - uses: actions/upload-artifact@v4
         with:
           name: AI-Workspace-Preview-Windows-x64
-          path: experiments/desktop-spike/artifact/AI-Workspace-Preview-Windows-x64.zip
+          path: experiments/desktop-spike/artifact
           retention-days: 14

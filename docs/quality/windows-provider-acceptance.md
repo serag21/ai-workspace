@@ -71,6 +71,18 @@ On a Windows host with a representative existing Claude Code/Codex history, meas
 
 Run normal provider conversations in the official browser while the preview starts, switches providers, displays two panes, refreshes local metadata and quits. Check before/during/after behavior without spamming retries. If the failure reported on October 19 recurs, change **one** competing app/extension at a time, record which change first restores the browser, and avoid claiming a cause without isolation. Never export raw network headers or session data.
 
+## One-sitting owner acceptance (AW-009, desktop preview)
+
+The desktop preview now packages a low-friction, verifiable owner acceptance experience that **does not replace** this protocol but front-loads its first pass:
+
+- The packaged build embeds its exact Actions commit (`build-info.json`, shown in the UI **build chip**; honest "not embedded" for source-tree runs).
+- The app's **Owner acceptance test** panel serves the 19-item checklist from `experiments/desktop-spike/acceptance-report.cjs` (single source of truth), with **Pass / Fail / Blocked / Not tested** states.
+- **Save acceptance report** writes a redacted, local-only Markdown + JSON pair to the Downloads folder (links/addresses/long token-shaped values scrubbed before write; no dialog, no upload, no telemetry) plus a 30-second pasteable summary.
+- CI verifies the packaged binary offline: ASAR assertions, `--offline-smoke`, and `--smoke-verify` (bridge probe + canary redaction proof + build-commit marker compared to `GITHUB_SHA`).
+- The artifact package ships `Owner-Acceptance-Guide.md`, `SAFE-TEST-ATTACHMENT.txt` and a `.sha256` file.
+
+Owner flow: download one zip → launch → checklist → save report → send the two files back. See `docs/quality/windows-acceptance-guide.md`. A provider refusing embedded sign-in is recorded **Blocked** — that outcome, not a workaround, feeds the G1 step-2 decision.
+
 ## Minimal run checklist (revised 2026-10-29, branch head `ce3e547`)
 
 From the repository root on the owner's Windows host (PowerShell 5.1: separate statements with `;`, not `&&`):
@@ -81,7 +93,7 @@ node experiments/desktop-spike/regression-report.mjs
 cd experiments\desktop-spike; npm run check
 ```
 
-Expected at this commit: **89/89 tests passing**, `npm run check` clean, and the regression report printing **"Mapped 28 synthetic-test gates. All 16 P0s still need live-host verification."** (Both numbers move when tests are added; the live P0 shortfall must never shrink without a live run.)
+Expected at the AW-009 head: **148/148 tests passing** (122 desktop-spike + 26 local-agent-probe), `npm run check` clean, and the regression report printing **"Mapped 35 synthetic-test gates. All 16 P0s still need live-host verification."** (Both numbers move when tests are added; the live P0 shortfall must never shrink without a live run.)
 
 Then push the branch (or wait for the run on that exact head SHA) and require **both** workflows green:
 

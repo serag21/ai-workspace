@@ -14,4 +14,9 @@ contextBridge.exposeInMainWorld("aiWorkspace", Object.freeze({
     ipcRenderer.on("spike:provider-status", listener);
     return () => ipcRenderer.removeListener("spike:provider-status", listener);
   },
+  // AW-009 owner acceptance surface: build identity, the shared checklist
+  // (single source of truth in the main process) and the local report save.
+  buildInfo: () => ipcRenderer.invoke("spike:build-info"),
+  acceptanceItems: () => ipcRenderer.invoke("spike:acceptance-items"),
+  saveAcceptanceReport: (results) => ipcRenderer.invoke("spike:save-acceptance-report", results),
 }));

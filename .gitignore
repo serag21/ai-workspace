@@ -11,4 +11,6 @@ dist/
 # Locally generated CI/report artifacts (published as GitHub Actions artifacts, never committed):
 experiments/desktop-spike/regression-status.md
 experiments/desktop-spike/agent-discovery/
+experiments/desktop-spike/build-info.json
+experiments/desktop-spike/artifact/
 

@@ -6,12 +6,20 @@
  * Limitations: provider login/OAuth/popup flows are NOT validated on Windows;
  * provider UI may block embedded web clients. No live terminal/resume support.
  */
-const { app, BrowserWindow, WebContentsView, ipcMain, session, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, session, shell, dialog } = require("electron");
 const path = require("node:path");
+const os = require("node:os");
+const fsp = require("node:fs/promises");
+const { readFileSync, appendFileSync, mkdirSync } = require("node:fs");
 const { openAgentTerminal } = require("./agent-actions.cjs");
 const { resolveCliOnPath } = require("./cli-provenance.cjs");
 const { parseAgentTail, readTranscriptTail } = require("./agent-tail.cjs");
 const { browserDestination } = require("./provider-navigation.cjs");
+const {
+  ACCEPTANCE_SCHEMA,
+  ACCEPTANCE_ITEMS,
+  buildAcceptanceReport,
+} = require("./acceptance-report.cjs");
 
 const URLS = Object.freeze({
   chatgpt: "https://chatgpt.com/",
@@ -27,14 +35,81 @@ let layout = "agent";
 const selected = { left: "chatgpt", right: "claude" };
 const views = new Map();
 
+// Build identity: written to build-info.json by build-assets.cjs at package
+// time (commit + version + builtAt). When it is missing the app says "not
+// embedded" instead of inventing one.
+function loadBuildInfo() {
+  try {
+    const raw = JSON.parse(readFileSync(path.join(__dirname, "build-info.json"), "utf8"));
+    return {
+      buildCommit: typeof raw.buildCommit === "string" && /^[a-f0-9]{7,64}$/i.test(raw.buildCommit)
+        ? raw.buildCommit : null,
+      appVersion: typeof raw.version === "string" ? raw.version.slice(0, 60) : null,
+      builtAt: typeof raw.builtAt === "string" ? raw.builtAt.slice(0, 40) : null,
+      channel: typeof raw.channel === "string" ? raw.channel.slice(0, 40) : "unverified-preview",
+    };
+  } catch {
+    return { buildCommit: null, appVersion: null, builtAt: null, channel: "unverified-preview" };
+  }
+}
+
 // G1 diagnostics are deliberately coarse: never transmit provider URLs,
 // authentication codes, cookies, titles or page content to the app shell.
+// The main process also keeps the latest state per pane so the owner
+// acceptance report can include it — states only, never URLs or codes' text.
+const providerStatusLog = new Map();
+let lastInventory = null;
+let lastCliProbe = null;
+
 function reportProviderStatus(provider, pane, state, errorCode = null) {
+  const cleanCode = Number.isSafeInteger(errorCode) ? errorCode : null;
+  providerStatusLog.set(provider + ":" + pane, { state, errorCode: cleanCode });
   if (!windowRef || windowRef.isDestroyed()) return;
   windowRef.webContents.send("spike:provider-status", {
     provider, pane, state,
-    errorCode: Number.isSafeInteger(errorCode) ? errorCode : null,
+    errorCode: cleanCode,
   });
+}
+
+// Diagnostics for the owner acceptance report: pane state words, numeric
+// network codes and session counts only. No paths, ids, titles or text.
+function collectDiagnostics() {
+  const diagnostics = {};
+  if (providerStatusLog.size) {
+    diagnostics.providerStatus = Object.fromEntries(
+      [...providerStatusLog.entries()].map(([key, value]) => [key, {
+        state: value.state,
+        errorCode: value.errorCode === null ? null : Number(value.errorCode),
+      }]));
+  }
+  if (Array.isArray(lastInventory) && lastInventory.length) {
+    const counts = {};
+    for (const item of lastInventory) {
+      if (item && typeof item.provider === "string" && item.provider) {
+        counts[item.provider] = (counts[item.provider] || 0) + 1;
+      }
+    }
+    if (Object.keys(counts).length) diagnostics.sessionCounts = counts;
+  }
+  if (lastCliProbe && typeof lastCliProbe === "object") {
+    diagnostics.cliAvailability = Object.fromEntries(
+      Object.entries(lastCliProbe).map(([key, value]) => [key, Boolean(value)]));
+  }
+  return diagnostics;
+}
+
+function acceptanceEnvironment(info) {
+  const environment = {
+    commit: info.buildCommit,
+    appVersion: info.appVersion,
+    electron: (process.versions && process.versions.electron) || null,
+    platform: process.platform || null,
+    osRelease: typeof os.release === "function" ? os.release() : null,
+  };
+  for (const key of Object.keys(environment)) {
+    if (environment[key] === null) delete environment[key];
+  }
+  return environment;
 }
 
 function createProviderView(provider, pane = "left") {
@@ -187,13 +262,120 @@ async function readLocalAgents() {
         // identifies the same local transcript. Preserve file path for backup.
         byId.set(item.id, { ...prior, ...item, file: prior?.file ?? null });
       }
-      return [...byId.values()].sort((a,b)=>b.modifiedAt-a.modifiedAt).slice(0,100);
+      const inventory = [...byId.values()].sort((a,b)=>b.modifiedAt-a.modifiedAt).slice(0,100);
+      lastInventory = inventory;
+      return inventory;
     } catch (error) {
       // An unavailable optional SDK does not break local session discovery.
       // Surface a warning in the developer console only, never private text.
       console.warn("Claude SDK unavailable; using bounded local metadata inventory:", error?.message);
-      return fallbackInventory.slice(0,100);
+      lastInventory = fallbackInventory.slice(0,100);
+      return lastInventory;
     }
+}
+
+// Save the owner acceptance report: validate + redact first (throws before
+// any write), then write both artifacts to the Downloads folder. No dialog,
+// no upload, no telemetry — the owner copies the files back manually.
+async function saveAcceptanceReport(results) {
+  const info = loadBuildInfo();
+  const built = buildAcceptanceReport({
+    schema: ACCEPTANCE_SCHEMA,
+    results,
+    environment: acceptanceEnvironment(info),
+    diagnostics: collectDiagnostics(),
+    generatedAt: new Date().toISOString(),
+  });
+  const directory = app.getPath("downloads");
+  await fsp.mkdir(directory, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const base = path.join(directory, "AI-Workspace-acceptance-" + stamp);
+  const markdownPath = base + ".md";
+  const jsonPath = base + ".json";
+  await fsp.writeFile(markdownPath, built.markdown, "utf8");
+  await fsp.writeFile(jsonPath, built.json, "utf8");
+  return { markdownPath, jsonPath, summary: built.summary };
+}
+
+// Offline, no provider traffic: proves the packaged preload bridge, the
+// in-app report builder and the redaction contract on a real build.
+async function runSmokeVerify() {
+  try {
+    const info = loadBuildInfo();
+    const probe = new BrowserWindow({
+      width: 640,
+      height: 480,
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.cjs"),
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webSecurity: true,
+      },
+    });
+    await probe.loadFile(path.join(__dirname, "index.html"));
+    const bridge = await probe.webContents.executeJavaScript(
+      "typeof window.aiWorkspace === 'object' && " +
+      "typeof window.aiWorkspace.buildInfo === 'function' && " +
+      "typeof window.aiWorkspace.acceptanceItems === 'function' && " +
+      "typeof window.aiWorkspace.saveAcceptanceReport === 'function'",
+      false,
+    );
+    if (bridge !== true) throw new Error("acceptance bridge missing from preload");
+    probe.close();
+
+    // Canary redaction proof inside the real module: a token-shaped value
+    // the owner might paste must never survive into the rendered report.
+    const canary = "SMOKE_SECRET_AAAA-BBBB-CCCC-DDDD";
+    const redacted = buildAcceptanceReport({
+      schema: ACCEPTANCE_SCHEMA,
+      results: [{ id: "attachments", result: "blocked", note: "canary token " + canary }],
+      environment: acceptanceEnvironment(info),
+      generatedAt: new Date().toISOString(),
+    });
+    if (redacted.markdown.includes(canary) || redacted.json.includes(canary)) {
+      throw new Error("redaction contract broken in smoke verify");
+    }
+
+    // File round-trip, then clean up (no leftover artifacts after verify).
+    const saved = await saveAcceptanceReport([{ id: "app-launches", result: "pass" }]);
+    if ((await fsp.readFile(saved.markdownPath, "utf8")).length === 0) {
+      throw new Error("markdown report empty after save");
+    }
+    await fsp.rm(saved.markdownPath, { force: true });
+    await fsp.rm(saved.jsonPath, { force: true });
+
+    const suffix = info.buildCommit ? " buildCommit=" + info.buildCommit : "";
+    process.stdout.write("AI_WORKSPACE_SMOKE_VERIFY_OK" + suffix + "\n");
+    app.exit(0);
+  } catch (error) {
+    try {
+      console.error("Smoke verify failed:",
+        error && typeof error.message === "string" ? error.message : String(error));
+    } catch { /* best effort */ }
+    app.exit(1);
+  }
+}
+
+// Honest startup failure: a native error dialog plus a private log next to
+// the app data — no silent blank window and no invented diagnostics.
+function reportStartupFailure(error) {
+  const message = (error && typeof error.message === "string" ? error.message : String(error))
+    .slice(0, 300);
+  try { console.error("Desktop spike failed to start:", message); } catch { /* best effort */ }
+  try {
+    const dir = path.join(os.homedir(), "AppData", "Roaming", "AI Workspace Preview");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(path.join(dir, "startup-failure.log"),
+      new Date().toISOString() + " " + message + "\n");
+  } catch { /* best effort only */ }
+  try {
+    dialog.showErrorBox("AI Workspace Preview could not start",
+      "The desktop preview exited before its window opened.\nDetails: " + message +
+      "\nA private log was recorded as startup-failure.log in your app data folder.");
+  } catch { /* no dialog surface in a bare test harness */ }
+  app.exit(1);
 }
 
 app.whenReady().then(async () => {
@@ -238,6 +420,9 @@ app.whenReady().then(async () => {
       resolveCliOnPath("claude"),
       resolveCliOnPath("codex"),
     ]);
+    // Report only booleans into the acceptance diagnostics; the resolved
+    // path stays in the UI-side result only and never enters a report.
+    lastCliProbe = { "claude-code": Boolean(claude), codex: Boolean(codex) };
     return { platform: process.platform, "claude-code": claude, codex };
   });
 
@@ -278,11 +463,38 @@ app.whenReady().then(async () => {
     return openAgentTerminal(chosen);
   });
 
+  // AW-009: owner acceptance surface. The checklist is the single source of
+  // truth in acceptance-report.cjs; the report is validated and redacted in
+  // the main process before anything touches disk.
+  ipcMain.handle("spike:build-info", async (event) => {
+    if (!ownsSender(event)) throw new Error("Unknown window.");
+    return loadBuildInfo();
+  });
+
+  ipcMain.handle("spike:acceptance-items", async (event) => {
+    if (!ownsSender(event)) throw new Error("Unknown window.");
+    return ACCEPTANCE_ITEMS;
+  });
+
+  ipcMain.handle("spike:save-acceptance-report", async (event, results) => {
+    if (!ownsSender(event)) throw new Error("Unknown window.");
+    if (!Array.isArray(results) || !results.length) {
+      throw new TypeError("At least one check result is required.");
+    }
+    return saveAcceptanceReport(results);
+  });
+
+  if (process.argv.includes("--smoke-verify")) {
+    // No provider window: the hidden probe window loads only the local UI.
+    void runSmokeVerify();
+    return;
+  }
+
   await createWindow();
   if (process.argv.includes("--offline-smoke")) {
     process.stdout.write("AI_WORKSPACE_OFFLINE_SMOKE_OK\n");
     app.quit();
   }
-}).catch((error) => console.error("Desktop spike failed:", error));
+}).catch(reportStartupFailure);
 
 app.on("window-all-closed", () => app.quit());
