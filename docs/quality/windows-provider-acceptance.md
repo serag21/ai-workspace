@@ -93,7 +93,7 @@ node experiments/desktop-spike/regression-report.mjs
 cd experiments\desktop-spike; npm run check
 ```
 
-Expected at the AW-009 head: **148/148 tests passing** (122 desktop-spike + 26 local-agent-probe), `npm run check` clean, and the regression report printing **"Mapped 35 synthetic-test gates. All 16 P0s still need live-host verification."** (Both numbers move when tests are added; the live P0 shortfall must never shrink without a live run.)
+Expected at the AW-009 head: **149/149 tests passing** (123 desktop-spike + 26 local-agent-probe), `npm run check` clean, and the regression report printing **"Mapped 35 synthetic-test gates. All 16 P0s still need live-host verification."** (Both numbers move when tests are added; the live P0 shortfall must never shrink without a live run.)
 
 Then push the branch (or wait for the run on that exact head SHA) and require **both** workflows green:
 

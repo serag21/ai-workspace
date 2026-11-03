@@ -31,6 +31,10 @@ const LEFT_RAIL = 270;
 const TOP_BAR = 64;
 
 let windowRef = null;
+// AW-009: the hidden smoke-verify probe is the only other first-party window.
+// ownsSender() accepts its bridge calls so the real page's on-load invokes
+// succeed in --smoke-verify mode instead of being rejected as foreign.
+let acceptanceProbeWindow = null;
 let layout = "agent";
 const selected = { left: "chatgpt", right: "claude" };
 const views = new Map();
@@ -210,8 +214,13 @@ function layoutViews() {
 }
 
 function ownsSender(event) {
-  return Boolean(windowRef && !windowRef.isDestroyed() &&
-    event.sender.id === windowRef.webContents.id);
+  const sender = event && event.sender;
+  if (!sender) return false;
+  if (windowRef && !windowRef.isDestroyed() &&
+    sender.id === windowRef.webContents.id) return true;
+  return Boolean(acceptanceProbeWindow &&
+    !acceptanceProbeWindow.isDestroyed() &&
+    sender.id === acceptanceProbeWindow.webContents.id);
 }
 
 async function createWindow() {
@@ -300,9 +309,10 @@ async function saveAcceptanceReport(results) {
 // Offline, no provider traffic: proves the packaged preload bridge, the
 // in-app report builder and the redaction contract on a real build.
 async function runSmokeVerify() {
+  let probeWindow = null;
   try {
     const info = loadBuildInfo();
-    const probe = new BrowserWindow({
+    probeWindow = new BrowserWindow({
       width: 640,
       height: 480,
       show: false,
@@ -314,8 +324,12 @@ async function runSmokeVerify() {
         webSecurity: true,
       },
     });
-    await probe.loadFile(path.join(__dirname, "index.html"));
-    const bridge = await probe.webContents.executeJavaScript(
+    // First-party owner for the page's on-load bridge calls (see ownsSender).
+    // The window stays open until the OK marker is flushed; closing it first
+    // would fire window-all-closed and race app.quit() against this work.
+    acceptanceProbeWindow = probeWindow;
+    await probeWindow.loadFile(path.join(__dirname, "index.html"));
+    const bridge = await probeWindow.webContents.executeJavaScript(
       "typeof window.aiWorkspace === 'object' && " +
       "typeof window.aiWorkspace.buildInfo === 'function' && " +
       "typeof window.aiWorkspace.acceptanceItems === 'function' && " +
@@ -323,7 +337,16 @@ async function runSmokeVerify() {
       false,
     );
     if (bridge !== true) throw new Error("acceptance bridge missing from preload");
-    probe.close();
+
+    // Full round trip through the guarded main-side handler: the real page's
+    // bridge must actually deliver to the owner-only channel, not merely
+    // expose a function surface.
+    const roundTrip = await probeWindow.webContents.executeJavaScript(
+      "window.aiWorkspace.buildInfo()", false,
+    );
+    if (roundTrip === null || typeof roundTrip !== "object") {
+      throw new Error("acceptance bridge round trip failed");
+    }
 
     // Canary redaction proof inside the real module: a token-shaped value
     // the owner might paste must never survive into the rendered report.
@@ -347,9 +370,18 @@ async function runSmokeVerify() {
     await fsp.rm(saved.jsonPath, { force: true });
 
     const suffix = info.buildCommit ? " buildCommit=" + info.buildCommit : "";
-    process.stdout.write("AI_WORKSPACE_SMOKE_VERIFY_OK" + suffix + "\n");
+    // Only exit after the marker write has been flushed: on Windows the
+    // stdout pipe is asynchronous, and app.exit() would kill the process
+    // before a pending write reaches the CI shell.
+    await new Promise((resolve, reject) => {
+      process.stdout.write("AI_WORKSPACE_SMOKE_VERIFY_OK" + suffix + "\n",
+        (error) => (error ? reject(error) : resolve()));
+    });
     app.exit(0);
   } catch (error) {
+    acceptanceProbeWindow = null;
+    try { if (probeWindow && !probeWindow.isDestroyed()) probeWindow.close(); }
+    catch { /* best effort */ }
     try {
       console.error("Smoke verify failed:",
         error && typeof error.message === "string" ? error.message : String(error));

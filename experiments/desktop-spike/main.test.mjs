@@ -91,6 +91,18 @@ async function shellFixture(options = {}) {
           expression.includes("saveAcceptanceReport") &&
           expression.includes("acceptanceItems") &&
           expression.includes("buildInfo")) return Promise.resolve(true);
+      // Smoke verify round trip: the fake answers the owner build-info
+      // channel with the same honest fallback (no fake commit invented).
+      if (expression === "window.aiWorkspace.buildInfo()") {
+        return Promise.resolve({
+          buildCommit: options.buildInfo &&
+            typeof options.buildInfo.buildCommit === "string"
+            ? options.buildInfo.buildCommit : null,
+          appVersion: null,
+          builtAt: null,
+          channel: "unverified-preview",
+        });
+      }
       return Promise.resolve(false);
     }
   }
@@ -165,7 +177,14 @@ async function shellFixture(options = {}) {
     console,
     process: {
       argv,
-      stdout: { write(text) { stdout.push(String(text)); } },
+      stdout: {
+        // Mirrors Node stream semantics: the write callback reports
+        // completion, which main.cjs awaits before app.exit().
+        write(text, callback) {
+          stdout.push(String(text));
+          if (typeof callback === "function") callback();
+        },
+      },
       versions: { electron: "44.9.3" },
       platform: "win32",
     },
@@ -495,4 +514,19 @@ test("CON-017: smoke verify without embedded identity still passes and claims no
   assert.match(f.stdoutText(), /AI_WORKSPACE_SMOKE_VERIFY_OK/);
   assert.ok(!f.stdoutText().includes("buildCommit="),
     "no commit must be claimed when none was embedded");
+});
+
+test("CON-017: smoke verify's probe window is an owner-window, a foreign sender still is not", async () => {
+  const f = await shellFixture({ argv: ["electron", "main.cjs", "--smoke-verify"] });
+  // f.window is the probe window (smoke verify opens exactly one).
+  const info = await f.handlers.get("spike:build-info")(f.sender);
+  assert.equal(info.buildCommit, null, "a source-tree build must report no commit, not a fake one");
+  const items = await f.handlers.get("spike:acceptance-items")(f.sender);
+  assert.ok(items.length >= 15, "the probe window may read the shared checklist");
+  await assert.rejects(f.handlers.get("spike:build-info")(f.otherSender), /Unknown window/);
+  await assert.rejects(f.handlers.get("spike:acceptance-items")(f.otherSender), /Unknown window/);
+  await assert.rejects(
+    f.handlers.get("spike:save-acceptance-report")(f.otherSender, [{ id: "app-launches", result: "pass" }]),
+    /Unknown window/,
+    "a foreign page must never write reports even in smoke-verify mode");
 });
