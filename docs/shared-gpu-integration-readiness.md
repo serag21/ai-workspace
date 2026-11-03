@@ -1,6 +1,14 @@
 # AI Workspace — shared RTX 5090 integration readiness (2026-10-27)
 
-**Status: requirements and preliminary inventory only. No global GPU controller API is defined here; do not implement a second controller, scheduler, arbiter, daemon, background process or kill switch.** The designated shared GPU-dashboard project is the sole owner of leases, game holds, emergency controls, prioritization, telemetry, and inter-project coordination. Local OpenCode/Ollama is the default development stack; paid frontier tools are opt-in escalation.
+**Status as of 2026-11-02:** CentralGPUController **v0.2.0** and its versioned **client contract 1.0** are published and have passed **bounded acceptance testing**. **AI Workspace has no enrolled worker, no runtime integration, and no permission for unattended GPU inference**. The controller is authoritative; do not create a second controller, scheduler, arbiter, daemon, background process or kill switch.
+
+**Canonical handoff:** https://github.com/serag21/CentralGPUController/blob/main/docs/INTEGRATION_HANDOFF.md
+
+**Versioned client contract:** https://github.com/serag21/CentralGPUController/blob/main/docs/CLIENT_CONTRACT.md
+
+**Acceptance evidence:** https://github.com/serag21/CentralGPUController/blob/main/docs/VALIDATION_REPORT.md
+
+The central project demonstrated two **disposable native OpenCode workers** checkpointing and yielding shared Qwen to FLUX.2/Wan, then resuming code work in their original sessions. This does **not** validate production profiles, AI Workspace integration, existing interactive OpenCode Desktop sessions, or post-reboot behavior. The controller remains observe-only for normal unattended inference; product integrations are not activated. The central engineering workflow commissions projects sequentially, and its handoff explicitly lists **AI Workspace as optional**. No new work or enrollment is authorized by this documentation update. The designated shared GPU-dashboard project is the sole owner of leases, game holds, emergency controls, prioritization, telemetry, and inter-project coordination. Local OpenCode/Ollama is the default development stack; paid frontier tools are opt-in escalation.
 
 ## 1. Repository and existing GPU-related files
 
@@ -40,9 +48,9 @@
 - The AI Workspace ChatGPT **cloud scheduled development** task was disabled 2026-10-25. It is unrelated to the local Windows shell popup mechanism.
 - Ollama/OpenCode/global shared controller are external dependencies **owned by other projects**. Do not install duplicates, change global Ollama configuration, register competing tasks, or automatically assume the controller is already deployed.
 
-## 5. Thin client integration after contract is available
+## 5. Optional thin integration after commissioning by the central controller
 
-1. Read the actual versioned controller client contract from its owning project; confirm namespace, lease scope, process identity, priority, TTL/heartbeat, hold and cancellation semantics, queue persistence, security boundaries, and what happens when controller is offline.
+1. The real contract is now published as **contract 1.0**. Review its scoped-client authentication, measured reservations, durable native OpenCode session IDs, turn permits, fenced leases, safe checkpoints, Gaming Hold and fail-closed recovery. Recheck the current version immediately before any **centrally commissioned** implementation; do not invent extra endpoints. Native OpenCode Desktop sessions are explicitly **not** automatically managed.
 2. Implement only a **thin adapter** in AI Workspace. It must never create an independent global queue, controller daemon or dashboard. No speculative endpoints or undocumented JSON payloads.
 3. Classify actions as `cpu-only` or `gpu-intensive`. CPU-only tasks may proceed without a lease; GPU-intensive tasks require a valid granted lease before invoking Ollama via OpenCode. Implement denial, queued, lost lease, and clean stop states.
 4. Report actual local model/VRAM/CPU usage via existing controller telemetry (or explicitly approved passive diagnostics); do not add a second polling service.
@@ -51,6 +59,6 @@
 
 ## Next decision
 
-**No GPU integration code should be authored until the real shared controller contract arrives.** Continue QW-002 (manual-account compatibility preparation), QW-003 (local agent safety), QW-004 (CPU-only reliability tests) and QW-005 (compliant browser-auth architecture feasibility) in the meantime. Do not create extra inference sessions to benchmark model choices while the owner is tuning OpenCode/Ollama.
+**The contract has arrived, but AI Workspace integration is optional and not yet commissioned or approved.** Do not register an AI Workspace client or worker, change controller-wide settings, activate a production profile, or make the desktop app depend on its availability. Continue AW-009 (low-friction acceptance preparation) and other independently safe CPU-only work as justified. The two blocked owner-facing gates remain authentic provider sign-in (AW-002) and an inactive real agent test (AW-003). Existing interactive OpenCode Desktop sessions remain unmanaged, and they may use GPU even when code/tests themselves are CPU-only. Do not start inference benchmarking or new unattended workloads in this project.
 
 Canonical project quality gates: `docs/quality/reliability-regression-register.md`; product charter: `docs/local-first-development-charter.md`.
