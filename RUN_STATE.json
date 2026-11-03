@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "projectId": "ai-workspace",
   "sourceBranch": "spike/local-agents-desktop",
-  "updatedOn": "2026-11-01",
+  "updatedOn": "2026-11-02",
   "governance": {
     "vision": "PROJECT_CHARTER.md",
     "backlog": "BACKLOG.md",
@@ -19,11 +19,12 @@
     "localAgent": "OpenCode + existing Ollama",
     "invocation": "native-opencode-run-when-called-by-verified-shared-worker",
     "schedulerOwner": "OpenMontage Production central GPU controller",
-    "controllerContract": "not-published-or-not-verified",
-    "controllerIntegration": "not-implemented",
+    "controllerContract": "published-v1.0-reviewed-not-activated",
+    "controllerIntegration": "not-commissioned-no-ai-workspace-client",
     "recurringJobsCreatedByThisRepo": false,
     "externalPaidCallsEnabled": false,
-    "note": "This file does not activate any job, daemon, timer, Windows task or GPU lease."
+    "note": "Global CentralGPUController v0.2.0 with contract 1.0 exists and passed bounded disposable-worker validation. AI Workspace is optional; no project worker enrolled or production integration activated. Existing OpenCode Desktop sessions are unmanaged. This state file creates no worker, lease, daemon, timer or GPU permission.",
+    "controllerSource": "https://github.com/serag21/CentralGPUController/blob/main/docs/INTEGRATION_HANDOFF.md"
   },
   "resources": {
     "maxUnattendedMinutesPerCycle": 60,
@@ -68,7 +69,7 @@
       "AW-011",
       "AW-012"
     ],
-    "checkpointOnNextRun": "Cycle 2026-10-30..2026-11-01 complete (bounded cycle per owner instruction; stopped at clean checkpoint): AW-004 DONE (489dabd), AW-006 DONE (e483806), AW-010 DONE (reconciled), AW-007 DONE (7a38691), AW-005 DONE (9b812c2: D-012 pivot trigger), AW-008 DONE (ae3ccdc: official-SDK live event + explicit-approval contract mock; D-013 records deferred unverified shapes). Latest CI: 41353146142 (Linux) + 41353146128 (Windows) success at ae3ccdc; 126/126 local. Only AW-009 remains READY; no further work started (owner-gaming window respected). Last green commit ae3ccdc is the recovery checkpoint.",
+    "checkpointOnNextRun": "Cycle 2026-10-30..2026-11-01 complete (bounded cycle per owner instruction; stopped at clean checkpoint): AW-004 DONE (489dabd), AW-006 DONE (e483806), AW-010 DONE (reconciled), AW-007 DONE (7a38691), AW-005 DONE (9b812c2: D-012 pivot trigger), AW-008 DONE (ae3ccdc: official-SDK live event + explicit-approval contract mock; D-013 records deferred unverified shapes). Latest CI: 41353146142 (Linux) + 41353146128 (Windows) success at ae3ccdc; 126/126 local. Only AW-009 remains READY; no further work started (owner-gaming window respected). Last green commit ae3ccdc is the recovery checkpoint. As of 2026-11-02 the central GPU contract 1.0 is published and reviewed; AI Workspace is still an optional uncommissioned client, and this does not change AW-009 readiness, the owner G1/G2 gates, or any prior validated code/test commit.",
     "nextOwnerAction": "Bounded cycle complete — no autonomous work pending. Highest-value owner action: run G1 step 2 (embedded provider sign-in test, disposable account) — it is the D-012 pivot discriminator (≥2 target providers Blocked on embedded sign-in with no usable inline form triggers pivot B to the local-agent workbench). G2 (inactive agent resume) also awaits a meaningful preview test. AW-009 (CPU-only, READY) can be approved for a next cycle if the owner wants more bounded work first."
   },
   "completion": {
